@@ -63,6 +63,49 @@ The deterministic reference-runtime check is complete. Final reference evidence 
 
 A disposable synthetic rehearsal also exercised the real importer with Node 22 and npm: the first import completed in 12.18 seconds, the second was a 0.15-second no-op at the same `HEAD`, `baseline-v1` remained correct, and Tier 0 correctly reported the fixture's intentional Biome formatting failure in 0.31 seconds. This validates the machinery but is not substituted for genuine Lovable-export evidence.
 
+## R1-R8 specification defect: an SSR hydration race, caught before a model attempt
+
+Real Tier 1 execution against the imported `cozy-coffee-cart` specimen (commit `6d5486b0`) initially
+returned 7 of 8 R1-R8 tests failing, with failure signatures that read exactly like application defects:
+cart lines never appearing after "Add to cart," money rows missing, checkout staying disabled. Only R1 --
+the one test that never interacts with the page -- passed.
+
+Isolated with a controlled A/B on the same app and the same click, varying only whether the test waited for
+client hydration first:
+
+```
+NO hydration wait  : cart-line count = 0
+WITH hydration wait: cart-line count = 1
+```
+
+Root cause: `src/routes/index.tsx` is server-rendered (TanStack Start). Every `data-testid` is present in the
+SSR HTML before React attaches event handlers, so Playwright's actionability checks -- which only inspect
+the DOM -- let a click through before hydration completes. Worse, even a click that lands early gets
+overwritten a moment later when the mount effect runs `setCart(loadCart())`. R1 never exercises this path,
+which is why it alone passed against the unmodified spec.
+
+The operator adjudicated this as a bad test, not bad source, and the fix landed in the spec
+(`e2e/fixtures.ts`'s `waitForHydration`), never in `src/**`. It adds a precondition only: zero assertions,
+selectors, or test titles changed. The wait gates on `localStorage.getItem("coffee-cart-v1") !== null`,
+because the cart-persistence effect writes that exact key once the component has mounted -- and
+`coffee-cart-v1` is the SOW's own normative storage key (R8), not an incidental implementation detail
+picked for convenience.
+
+After the fix: 7 of 8 R1-R8 tests pass against the real specimen. The one residual failure (R5) is a plain
+string mismatch -- the app renders the tax line as `Tax (8%)`, the spec's `getByText("Tax", { exact: true
+})` expects the bare word `Tax` -- and is deliberately left unadjudicated here pending an owner decision on
+whether the exact label is normative or the spec's assumption was wrong a second time.
+
+**General lesson for applying this harness to what Lovable emits today**: a spec authored against a CSR
+(client-rendered) assumption produces failures on an SSR export that are indistinguishable, from the
+failure signature alone, from real application defects, because the server-rendered markup already
+satisfies every one of Playwright's DOM-presence and visibility checks. Handed to a live Dyad session
+unmodified, this would have produced five or more real-looking defects with no fix available in `src/**`,
+burning attempt budget toward an oscillation or signature-budget escalation before anyone noticed the spec,
+not the application, was wrong. Catching it by hand first is the SOW's "cheapest legitimate route" instinct
+applied to Component B: **check the test's own framework assumptions against what the generator actually
+emitted before trusting a red gate to mean a red application.**
+
 ## Acceptance evidence
 
 Deterministic tests are model-free. Remaining MVP evidence is intentionally not claimed by synthetic tests:
