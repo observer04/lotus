@@ -15,6 +15,14 @@ test("IMP supported profile detects Vite without assuming generator",()=>{
   assert.deepEqual(c.commands.build,["npm","run","build"]);
 });
 
+test("IMP capability detection supports a non-Vite React-style frontend",()=>{
+  const root=tempDir();
+  writePkg(root,{scripts:{start:"node server.mjs",build:"node build.mjs"},dependencies:{react:"18.3.1","react-dom":"18.3.1"}});
+  const c=detectCapabilities(root);
+  assert.equal(c.framework,"node-frontend");
+  assert.deepEqual(c.commands.dev,["npm","run","start"]);
+});
+
 test("IMP rejects workspaces and non-npm package managers",()=>{
   const a=tempDir(); writePkg(a,{workspaces:["apps/*"],scripts:{dev:"x",build:"x"}});
   assert.throws(()=>detectCapabilities(a),/workspaces/);

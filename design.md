@@ -24,7 +24,7 @@ No dashboard, deployment, database, CI service, or multi-project manager belongs
 
 ## 2. Evidence from the Dyad 1.12 capability spike
 
-The design uses observed behavior, not an assumed Dyad API.
+The design uses observed behavior, not an assumed Dyad API. The sanitized retained spike artifact is `evidence/dyad-spike-2026-08-29.md`; raw Dyad logs/settings remain outside Git because they may contain private state.
 
 | Question | Observed result | Design consequence |
 |---|---|---|
@@ -56,7 +56,7 @@ Spike conclusion: Mode B is the supported MVP. A future headless adapter must no
 - Mode B Dyad Build-mode invocation.
 - Bounded retries, safety checks, rollback, and escalation.
 - Deterministic fake-fixer scenarios and opt-in live Dyad acceptance runs.
-- Two distinct Lovable export fixtures and all six SOW defect scenarios, including oscillation.
+- Deterministic import fixtures, including a non-Vite compatibility fixture, plus all six SOW defect scenarios and oscillation. Final acceptance still requires two genuine, distinct Lovable exports; synthetic fixtures do not satisfy that evidence requirement.
 
 ### 3.2 Explicit non-goals
 
@@ -81,6 +81,10 @@ The importer accepts a project only when all of the following are true:
 
 Unsupported capabilities are reported with actionable reasons and a non-zero exit. “Any Lovable export” means any export inside this declared MVP profile; silent guessing is not allowed.
 
+### 3.4 Scope reduction order
+
+If schedule pressure forces a cut, preserve the SOW's order: first remove Playwright JSON aggregation, then Tier 1 from the repair loop, then reduce the spec suite to R1–R5, and only then reduce live fixable-defect evidence to the type and lint cases. Never cut the banned scanner, protected-path verifier, tamper-bait cycle, or cycle log. No reduction is currently activated; this order prevents safety evidence from being traded away for feature breadth.
+
 ## 4. Normative requirements
 
 The IDs below are the source of truth for implementation and test names.
@@ -102,6 +106,7 @@ The IDs below are the source of truth for implementation and test names.
 - IMP-013: a second run against unchanged input exits zero and produces no tracked or untracked diff.
 - IMP-014: a clean clone passes npm ci and npm run build.
 - IMP-015: two distinct Lovable exports pass the same importer without script modification.
+- IMP-016: before copying, the importer scans text files for the versioned high-confidence secret patterns in config/secret-patterns.json; a finding refuses import while reporting only pattern ID, relative path, and line.
 
 ### 4.2 Gate requirements
 
@@ -112,7 +117,7 @@ The IDs below are the source of truth for implementation and test names.
 - GATE-005: every invocation atomically replaces gate-report.json with a schema-valid report.
 - GATE-006: diagnostics have stable failure identities independent of line-number movement and output ordering.
 - GATE-007: the failure signature is SHA-256 over sorted unique gate/file/rule tuples.
-- GATE-008: the banned scan examines project source and tests, never its own pattern-definition source.
+- GATE-008: the banned scan examines filesystem content under src, e2e, and scripts. Code-like rules ignore prose in comments and string literals; directive rules match actual directive comment forms. The prompt renderer is the sole explicit path exclusion because it must quote the prohibited tokens.
 - GATE-009: a first-red e2e failure is rerun once by failing test ID before it can enter a fix loop.
 - GATE-010: a non-reproducible e2e failure is inconclusive and is never sent to Dyad.
 
@@ -123,7 +128,7 @@ The IDs below are the source of truth for implementation and test names.
 - PRM-003: the packet contains the first 20 failures and marks truncation.
 - PRM-004: source context is limited to 15 lines before and after a writable source location.
 - PRM-005: prior attempts on the current signature are included without model secrets or full conversation history.
-- PRM-006: constraints name protected paths, banned patterns, and the writable allowlist.
+- PRM-006: constraints name protected paths, banned patterns, the writable allowlist, and the prohibition on weakening assertions or reducing assertion count.
 - PRM-007: the complete packet has a configurable byte ceiling and records any truncation.
 
 ### 4.4 Cycle requirements
@@ -132,15 +137,15 @@ The IDs below are the source of truth for implementation and test names.
 - CYC-002: it runs gates before asking Dyad to change anything.
 - CYC-003: a green initial gate records a zero-attempt green cycle.
 - CYC-004: in Mode B it writes the prompt packet, displays its path, and waits for a Dyad-created Git state change.
-- CYC-005: completion requires a changed HEAD and a clean, stable worktree for three consecutive polls. The default poll interval is two seconds.
+- CYC-005: completion requires either a changed HEAD or a non-empty worktree inventory, followed by a stable snapshot. With the two-second default poll, committed-clean state must be stable for five polls and dirty state for fifteen polls.
 - CYC-006: the verifier compares the entire before/after SHA range and current worktree.
 - CYC-007: every allowed uncommitted change is captured in a harness attempt commit before re-gating.
 - CYC-008: any path outside the writable allowlist, any banned pattern, symlink, submodule, or protected mode change escalates immediately.
 - CYC-009: attempts per signature stop at 3.
 - CYC-010: total attempts stop at 6.
 - CYC-011: an A → B → A signature recurrence stops on the first recurrence.
-- CYC-012: two consecutive results whose failure count does not decrease stop as no progress.
-- CYC-013: the default wall-clock ceiling is 20 minutes and is configurable.
+- CYC-012: progress is compared lexicographically by the furthest fail-fast stage reached and the diagnostic count within that stage. Two consecutive non-improvements stop as no progress; reaching a later stage is always progress.
+- CYC-013: the configurable harness-execution ceiling defaults to 20 minutes and excludes Mode B operator/model invocation wait. The separate invocation timeout defaults to 10 minutes.
 - CYC-014: escalation restores the code tree to the last verified green tree through a new additive commit, never git reset --hard.
 - CYC-015: failed attempt commits and injected red commits remain ancestors and therefore remain inspectable.
 - CYC-016: every terminal path appends exactly one schema-valid line to cycles.jsonl and leaves a clean tree.
@@ -194,6 +199,11 @@ The only manual Mode B action is invoking Dyad with the generated packet and app
 
 ~~~text
 .
+├── package.json
+├── package-lock.json
+├── .nvmrc
+├── index.html                 # when present in the imported application
+├── src/                       # imported application; default writable root
 ├── AI_RULES.md
 ├── README.md
 ├── FINDINGS.md
@@ -205,6 +215,7 @@ The only manual Mode B action is invoking Dyad with the generated packet and app
 ├── playwright.config.ts
 ├── config/
 │   ├── banned-patterns.json
+│   ├── secret-patterns.json
 │   └── platform-dependencies.json
 ├── schemas/
 │   ├── harness.schema.json
@@ -222,7 +233,9 @@ The only manual Mode B action is invoking Dyad with the generated packet and app
 │       ├── capabilities.mjs
 │       ├── diagnostics.mjs
 │       ├── git-state.mjs
+│       ├── invocation.mjs
 │       ├── prompt.mjs
+│       ├── secrets.mjs
 │       ├── schema.mjs
 │       └── termination.mjs
 ├── e2e/
@@ -237,7 +250,7 @@ The only manual Mode B action is invoking Dyad with the generated packet and app
     └── runs/                 # ignored runtime evidence
 ~~~
 
-Bash files are stable entrypoints and process orchestrators. Parsing, hashing, JSON, schemas, prompt rendering, and state-machine decisions live in Node modules. Shell scripts use arrays, quoted paths, set -euo pipefail, and no eval.
+Bash files are stable entrypoints and process orchestrators. Parsing, hashing, JSON, schemas, prompt rendering, and state-machine decisions live in Node modules. Shell scripts use arrays, quoted paths, set -euo pipefail, and no eval. The `src/**`-only repair scope is intentionally validated against R1–R8; a project needing a root-file repair must receive a reviewed allowlist change before the cycle starts.
 
 ## 7. Component A design
 
@@ -245,13 +258,13 @@ Bash files are stable entrypoints and process orchestrators. Parsing, hashing, J
 
 Import uses a temporary staging directory. It never partially overlays the target:
 
-1. Resolve and validate source.
-2. Clone or copy into staging using a fixed exclusion list.
+1. Resolve a local source or clone a Git URL into temporary storage.
+2. Reject symlinks and high-confidence committed-secret findings before any target copy.
 3. Compute source identity from normalized relative paths and file hashes.
-4. Generate the intended target overlay in staging.
-5. Validate install, tooling, build, and report in staging.
-6. Apply the validated overlay to the clean target.
-7. Commit once and create baseline-v1.
+4. Return immediately when that identity is already imported; this happens before lockfile generation or registry access.
+5. Copy into staging using a fixed exclusion list and generate the intended target overlay.
+6. Validate install, tooling, build, and report in staging.
+7. Apply the validated overlay to the clean target, commit once, and create baseline-v1.
 
 Stable inputs produce byte-identical generated files. importedAt is written only on first import and preserved on a no-op re-run. Reports do not contain a fresh generation timestamp. Git URLs record the resolved commit SHA; local inputs record a content SHA.
 
@@ -281,14 +294,19 @@ package.json scripts are normalized without replacing existing application comma
 
 Command selection is capability-driven. The detector records why each command was chosen. It must not assume Vite merely because the source came from Lovable.
 
-### 7.3 Biome proof
+`harness.json` schema version 1 requires `harnessVersion`, `source.kind`, `source.identity`, `nodeVersion`, argv-array commands for build/dev/typecheck/lint, and at least one `writableGlobs` entry. Import-generated records additionally contain `importedAt`, detected `framework`, the e2e argv, optional resolved Git commit, and the local server-ready timeout.
+
+### 7.3 Secret boundary
+
+Environment files (`.env` and `.env.*`) are excluded by name. Independently, the importer scans source text files up to 1 MiB before copying. `config/secret-patterns.json` versions high-confidence signatures for private keys and OpenAI, OpenRouter, Google, GitHub, AWS, Slack, Stripe, and named secret literals. A match aborts import and reports only the pattern ID, relative file, and line; it never emits the matched value. This detector is intentionally separate from the banned-code scanner and cannot prove the absence of every possible credential, so final evidence receives a second secret audit.
+
+### 7.4 Biome proof
 
 biome.json contains:
 
 ~~~json
 {
   "linter": {
-    "domains": { "react": "recommended" },
     "rules": {
       "correctness": {
         "useExhaustiveDependencies": "error"
@@ -298,11 +316,11 @@ biome.json contains:
 }
 ~~~
 
-The importer creates a temporary React hook fixture with a deliberately missing dependency, runs pinned Biome against it, asserts the expected rule ID is present with error severity, then removes the fixture. This prevents a vacuous green caused by a renamed group, disabled domain, or unsupported file.
+The importer creates a temporary React hook fixture with a deliberately missing dependency, runs pinned Biome against it, parses the JSON reporter, and requires the exact `lint/correctness/useExhaustiveDependencies` diagnostic at error severity before removing the fixture. A substring in configuration-error prose is not proof. This prevents a vacuous green caused by a renamed group, invalid configuration, disabled rule, or unsupported file.
 
 The normal gate uses the non-mutating Biome CI command against explicit project paths.
 
-### 7.4 Import report
+### 7.5 Import report
 
 import-report.md always has these six sections:
 
@@ -312,7 +330,7 @@ import-report.md always has these six sections:
 | data-testid coverage | Interactive elements missing data-testid, with file and source location. |
 | Typecheck baseline | Exit status and parsed error count. |
 | Lint baseline | Exit status, error count, and warning count. |
-| Banned patterns | Pattern ID, path, and line; never the raw secret-like content around it. |
+| Banned patterns | Code-suppression pattern ID, path, and line. This check is not secret detection. |
 | Dependencies outside platform list | package name, requested range, dependency class, and review status. |
 
 The platform list is versioned in config/platform-dependencies.json. Unknown packages are report findings in the MVP, not automatically deleted or upgraded. The list must contain the separately reviewed specimen and harness dependencies before the acceptance baseline is approved.
@@ -325,7 +343,7 @@ gate.sh invokes gate-report.mjs, which owns the stage pipeline and atomic report
 
 | Stage | Command behavior | Parser |
 |---|---|---|
-| standards | Full scan of tracked src and e2e files; no mutation. | Native scanner results. |
+| standards | Full filesystem scan under src, e2e, and scripts; no mutation. | Native scanner results with pattern ID, relative path, line, and a bounded diagnostic excerpt. |
 | lint | Pinned Biome CI command with JSON output where available. | Biome diagnostic JSON. |
 | typecheck | Project's no-emit TypeScript command. | tsc file(line,column) diagnostics plus a stable fallback record for unparsed failures. |
 | build | Recorded production build command. | Structured known diagnostics when available; otherwise a project-level BUILD_EXIT rule. |
@@ -340,6 +358,7 @@ A diagnostic is normalized as:
 ~~~json
 {
   "failureId": "sha256:...",
+  "failureClassId": "sha256:...",
   "gate": "typecheck",
   "file": "src/hooks/useCart.ts",
   "line": 42,
@@ -350,7 +369,7 @@ A diagnostic is normalized as:
 }
 ~~~
 
-The failureId input is gate, normalized repo-relative file, and rule. For Playwright, rule is the stable R1–R8 test ID. Line, column, message punctuation, absolute paths, ANSI color, timestamps, and timing are excluded.
+`failureClassId` hashes gate, normalized repo-relative file, and rule. For Playwright, rule is the stable R1–R8 test ID. Line, column, message punctuation, absolute paths, ANSI color, timestamps, and timing are excluded. Multiple diagnostics may share one class, so `failureCount` can exceed the number of unique classes. Schema v1 retains `failureId` as a compatibility alias of `failureClassId`; consumers must not treat either field as a unique diagnostic-instance key.
 
 The cycle failureSignature is the SHA-256 of newline-joined, sorted, unique gate/file/rule tuples. This exactly supports per-signature attempts and A → B → A oscillation detection.
 
@@ -380,6 +399,7 @@ The cycle failureSignature is the SHA-256 of newline-joined, sorted, unique gate
       "failures": [
         {
           "failureId": "sha256:...",
+          "failureClassId": "sha256:...",
           "gate": "lint",
           "file": "src/hooks/useCart.ts",
           "line": 18,
@@ -410,18 +430,18 @@ When e2e first fails:
 3. Re-run only those IDs once.
 4. Feed only failures present in both runs into the cycle.
 
-If none reproduce, the cycle outcome is inconclusive_flaky, no prompt is produced, and the repository is unchanged. Mixed results retain only reproducible failures and record discarded IDs.
+The confirmation JSON must prove that at least one test was selected and that every requested R-rule ID was selected; zero selection or a missing ID is an errored gate, never a flaky pass. If none reproduce, the cycle outcome is inconclusive_flaky, no prompt is produced, and the repository is unchanged. Mixed results retain only reproducible failures, and `discardedFailureIds` is propagated from the gate report into the durable cycle record. The fresh process/context is intentional: each test establishes its own preconditions, while R8 tests persistence by reloading within that same test. A failure that needs another test's residue is an isolation defect, not valid R8 evidence.
 
 ### 8.5 Prompt construction
 
 The packet is plain Markdown and includes:
 
-- Cycle number, tier, commit, signature, and attempt budgets.
+- `CYCLE n of 6`, where `n` is the current repair-attempt ordinal (not a global cycle counter), plus tier, commit, signature, and attempt budgets.
 - First 20 normalized failures in stable order.
 - Writable source context only, at ±15 lines per distinct location.
 - For e2e, the rule statement, expected/actual result, and source candidates found from app stack frames or data-testid references.
 - One line for each prior attempt on the current signature: attempt number, before/after SHA, changed paths, and resulting signature/count.
-- Exact allowlist, protected paths, banned pattern names, and “stop if the test is wrong” instruction.
+- Exact allowlist, protected paths, banned pattern names, the no-assertion-weakening rule, and “stop if the test is wrong” instruction.
 - Truncation counts and the full gate-report path.
 
 The packet never contains API keys, environment values, absolute home paths, complete .env files, or more than the configured 48 KiB default.
@@ -438,11 +458,11 @@ It prints a short instruction:
 
 1. Open the already imported app in Dyad 1.12.
 2. Select Build mode and the declared run model.
-3. Paste the packet and approve or reject the proposal.
+3. Paste the packet and approve it if acceptable. A rejected/no-write proposal has no Mode B filesystem signal and ends at the invocation timeout.
 
-The watcher records HEAD, index tree, tracked worktree hash, and untracked path/hash inventory. A normal completion is a new HEAD followed by a clean repository that remains unchanged for three polls. Multiple Dyad commits are allowed.
+The watcher records HEAD plus a status inventory containing index/worktree state and path/hash metadata for modified and untracked files. It accepts either (a) a new HEAD with a clean snapshot stable for five two-second polls or (b) a dirty snapshot stable for fifteen polls, after which the harness captures allowed changes in a commit. Multiple Dyad commits are allowed. These different quiet periods favor quick atomic commits while giving uncommitted GUI writes 30 seconds to settle.
 
-An invocation timeout is not treated as green or as a model failure. It is logged distinctly, rolled back if a partial change exists, and exits non-zero.
+The invocation timeout defaults to 10 minutes. Invocation wait is recorded separately and excluded from the 20-minute harness-execution budget. A rejected proposal or a model response that writes nothing is not observable through Mode B's filesystem boundary and therefore ends as `invocation_timeout`; it is never treated as green or a model correctness failure. Any partial change is rolled back and the process exits non-zero.
 
 ### 8.7 Protection model
 
@@ -467,7 +487,7 @@ Protected content includes:
 
 verify-protected.sh checks the complete before..after commit range, staged changes, unstaged changes, untracked paths, renames, file modes, symlinks, and submodule entries. A change cannot evade verification by being committed by Dyad.
 
-The banned scanner checks tracked src and e2e content for versioned pattern IDs:
+The banned scanner checks filesystem content under src, e2e, and scripts for versioned pattern IDs:
 
 - TS_IGNORE
 - TS_EXPECT_ERROR
@@ -480,7 +500,7 @@ The banned scanner checks tracked src and e2e content for versioned pattern IDs:
 - CONTINUE_ON_ERROR
 - OR_TRUE
 
-Pattern definitions are stored as data and the scanner itself is outside the scan scope, preventing the SOW's self-match problem. scripts/** remains protected by Git verification.
+Code-token rules operate on a masked view that removes comments and string literals, while directive rules require real directive-comment syntax. Pattern definitions are stored as JSON outside the three scan roots. `scripts/lib/prompt.mjs` is the only excluded scanned file because its job requires quoting every prohibited token; it remains protected by Git verification. All other scripts are scanned, so `|| true` and similar script tampering remain structurally detectable.
 
 ### 8.8 Git transaction model
 
@@ -495,31 +515,32 @@ Normal acceptance cycles start only after harness-green-v1. The initial converge
 
 Each safe attempt must exist as a commit. If Dyad already committed, the harness records the SHA range. If Dyad left allowed changes uncommitted, the harness creates a clearly named capture commit.
 
-On escalation:
+On non-bootstrap escalation:
 
 1. Preserve the attempt metadata and red commit ancestry.
 2. Remove any exact, verified untracked attempt paths.
 3. Create a new commit whose tree equals refs/harness/last-green and whose parent is the current failed HEAD.
 4. Append the terminal cycle record and commit the log.
-5. Verify the code tree still equals the last green tree, excluding audit-only log data.
+5. Verify the resulting code tree equals the last-green tree, with `cycles.jsonl` as the sole audit-log difference.
 6. Leave the branch clean and exit non-zero.
 
-This is additive rollback. No failed commit is erased and no force operation is used.
+Bootstrap has no prior green tree. If bootstrap escalates, the same additive procedure restores the cycle-start red tree instead. No failed commit is erased and no force operation is used.
 
 ### 8.9 Termination order
 
-After every attempt, evaluate in this order:
+Before starting an attempt, stop for an exhausted harness-execution clock. After Dyad changes the tree, verify safety before any re-gate; a violation escalates immediately.
 
-1. Protected-path or banned-pattern violation → safety escalation.
-2. Wall-clock ceiling reached → timeout escalation.
-3. Gate green → success.
-4. Signature occurred earlier with a different intervening signature → oscillation escalation.
-5. Current signature has received 3 attempts → signature-budget escalation.
-6. Total attempts reached 6 → total-budget escalation.
-7. Failure count failed to decrease for 2 consecutive results → no-progress escalation.
-8. Otherwise build the next packet.
+After a completed re-gate, evaluate:
 
-The failure count rule is intentionally enforced exactly as the SOW states. Additional quality signals may be logged but cannot weaken a hard stop.
+1. Gate green → success, even if the clock crossed its ceiling while that gate was running.
+2. Harness-execution ceiling reached → timeout escalation before another attempt.
+3. Signature occurred earlier with a different intervening signature → oscillation escalation.
+4. Current signature has received 3 attempts → signature-budget escalation.
+5. Total attempts reached 6 → total-budget escalation.
+6. Two consecutive non-improvements in `(furthest stage index, failures in that stage)` → no-progress escalation.
+7. Otherwise build the next packet.
+
+For an identical failure set, no-progress normally stops after two attempts and therefore dominates the three-attempt signature cap. The signature cap remains a backstop when the same failure class/signature has a decreasing number of diagnostic instances. Raw aggregate failure count is retained for audit but is not compared across different fail-fast stages.
 
 ### 8.10 cycles.jsonl
 
@@ -536,11 +557,28 @@ Each line is independently schema-valid:
   "endCommit": "d4e5f6a",
   "initialSignature": "sha256:...",
   "finalSignature": null,
+  "signatureHistory": ["sha256:...", "sha256:...", null],
+  "attemptHistory": [
+    {
+      "attempt": 1,
+      "signature": "sha256:...",
+      "beforeSha": "a1b2c3d",
+      "afterSha": "b2c3d4e",
+      "changedPaths": ["src/components/Cart.tsx"],
+      "resultingSignature": "sha256:...",
+      "failureCount": 1,
+      "progress": {"stage": "e2e", "stageIndex": 4, "failureCount": 1}
+    }
+  ],
   "attempts": 2,
   "outcome": "green",
   "reason": "all_gates_passed",
   "durationSec": 94,
+  "harnessDurationSec": 34,
+  "invocationWaitSec": 60,
   "filesChanged": ["src/components/Cart.tsx"],
+  "attemptedPaths": ["src/components/Cart.tsx"],
+  "discardedFailureIds": [],
   "dyad": {
     "version": "1.12.0",
     "mode": "gui-build",
@@ -553,6 +591,8 @@ Each line is independently schema-valid:
 ~~~
 
 Allowed outcomes are green, escalated_safety, escalated_signature_budget, escalated_total_budget, escalated_oscillation, escalated_no_progress, escalated_timeout, invocation_timeout, inconclusive_flaky, and precondition_failed.
+
+`signatureHistory` records every gate signature, including terminal null on green. `attemptHistory` retains one bounded summary for each invocation, including terminal invocation/safety failures without raw model text. `filesChanged` is the net code-tree difference between cycle start and terminal code commit. `attemptedPaths` retains paths touched by attempts even if additive rollback removes them. `durationSec` is elapsed wall time, while `harnessDurationSec` excludes `invocationWaitSec`. Dyad version/provider/model/effort are nullable: an undeclared run records null values with `metadataSource: undeclared`, never a guessed acceptance profile.
 
 ## 9. Spec-driven and test-driven development
 
@@ -584,23 +624,22 @@ The R1–R8 Playwright tests are committed together before specimen source fixes
 
 | Layer | What it proves | AI/network policy |
 |---|---|---|
-| Unit | path normalization, schema validation, diagnostic parsing, failure hashing, prompt ordering/truncation, termination decisions | No network; no model |
-| Component | banned scanner, protected diff verification, capability detection, report generation | No network; no model |
-| Integration | import transaction, second-run no-op, clean clone build, Git commit-range capture, additive rollback | Package install may use npm; no model |
-| Harness acceptance | deterministic fake fixer reaches green, no-op stops, A/B oscillation stops, tamper stops, logs remain accurate | No model |
-| Product e2e | one Playwright test for each SPEC-R1–SPEC-R8 | Local browser only |
-| Live Dyad smoke | one bounded source edit in Dyad Build mode using a cheap configured provider | Opt-in only |
-| Live SOW acceptance | all required defect cycles with the declared end-use Dyad profile | Opt-in, operator initiated |
+| `tests/unit` | schema validation, diagnostic parsing, scanner/protection behavior, prompt construction, capability detection, and termination decisions | No network; no model |
+| `tests/integration` | import transaction/no-op, gate pipelines, E2E confirmation boundaries, and Git/process integration | Test adapters may replace npm/browser processes; no model |
+| `tests/acceptance` | end-to-end deterministic cycle behavior, real Mode B watcher semantics, rollback, tamper, and SPEC inventory | No network; no model |
+
+Product Playwright R1–R8, a live Dyad smoke, and final live SOW acceptance are evidence runs outside the deterministic `npm test` taxonomy. They use a local browser or an explicitly selected model only when the operator initiates them.
 
 ### 9.4 Required deterministic fixtures
 
 - lovable-vite-react: a sanitized Lovable-style Vite/React export.
 - lovable-vite-react-ts: a structurally different TypeScript export.
+- react-custom-bundler: a non-Vite synthetic compatibility fixture proving capability detection does not assume Vite.
 - diagnostics-biome, diagnostics-tsc, diagnostics-build, diagnostics-playwright.
 - git-clean, git-dyad-committed, git-dyad-uncommitted, git-protected, git-symlink.
 - fake-fixer-green, fake-fixer-no-progress, fake-fixer-oscillation, fake-fixer-tamper.
 
-The fake fixer applies predefined commits or patches through the same watcher and verifier boundary as Mode B. It is not a separate shortcut around the cycle state machine.
+The fake fixer applies predefined commits or patches through the same verifier and state-machine boundary as Mode B; separate acceptance tests exercise the real interactive watcher with both commit and uncommitted-edit completion. Synthetic fixtures prove repeatability, not the SOW's final requirement for two genuine distinct Lovable exports.
 
 ### 9.5 Appendix A e2e inventory
 
@@ -633,7 +672,7 @@ Selectors use data-testid for interactions the test owns. Exact user-visible str
 
 The harness does not need an AI key for deterministic tests. Dyad owns model calls in Mode B.
 
-### 10.1 End-use acceptance profile
+### 10.1 Owner-selected acceptance profile
 
 ~~~dotenv
 DYAD_PROVIDER=openai
@@ -642,7 +681,7 @@ DYAD_REASONING_EFFORT=high
 DYAD_MODE=gui-build
 ~~~
 
-OPENAI_API_KEY is supplied to Dyad through its environment or provider settings and is never read into a report. The model ID and high effort are consistent with the tested Dyad 1.12 catalog and the [official OpenAI model contract](https://developers.openai.com/api/docs/models/gpt-5.6-luna).
+This profile is an explicit project-owner choice, not a SOW requirement. [Official OpenAI documentation](https://developers.openai.com/api/docs/models/gpt-5.6-luna) lists `gpt-5.6-luna` and support for high reasoning effort. `OPENAI_API_KEY` is supplied to Dyad through its environment or provider settings and is never read into a report. A cycle records this profile only when the operator declares it; missing metadata stays null/undeclared.
 
 ### 10.2 Cheap live-smoke profile
 
@@ -653,13 +692,13 @@ When OPENAI_API_KEY is unavailable, an opt-in smoke run may use:
 
 The provider and model must be explicit in the run command or harness metadata. No fallback silently changes the model used for an acceptance claim.
 
-The smoke result proves the Dyad integration path only. It cannot replace the required gpt-5.6-luna/high acceptance run.
+The smoke result proves the Dyad integration path only. It does not replace the owner-selected gpt-5.6-luna/high final evidence run.
 
 ### 10.3 Secret handling
 
 - Commit .env.example only; ignore .env and provider-specific secret files.
 - Never echo key values, even on provider-test failure.
-- Redact Authorization headers and key-shaped strings from captured logs.
+- Reject source imports matching the versioned high-confidence secret detector; redact Authorization headers and supported key shapes from prompt material.
 - Record provider, model, effort, Dyad version, and whether metadata was observed or operator-declared.
 - Do not save a copied key into Dyad settings during automated test setup; prefer process environment. If a temporary settings key is used manually, remove it after the run.
 
@@ -682,13 +721,15 @@ The smoke result proves the Dyad integration path only. It cannot replace the re
 
 | SOW obligation | Design requirement | Primary proof |
 |---|---|---|
-| Reusable scripted import | IMP-001–IMP-015 | Two-export integration suite |
+| Reusable scripted import and secret refusal | IMP-001–IMP-016 | Multi-profile import integration suite plus secret canary |
 | Six-check import report | IMP-011 | Report snapshot and schema tests |
 | Node, lockfile, Biome, Playwright normalization | IMP-005–IMP-010 | Clean-clone and live-rule tests |
 | baseline-v1 | IMP-012 | Git integration assertion |
 | Tier 0 and Tier 1 gates | GATE-001–GATE-005 | Gate pipeline tests |
 | One e2e test per R1–R8 | SPEC-R1–SPEC-R8 | Playwright suite |
 | Structured gate report and signature | GATE-005–GATE-007 | Schema, parser, hash-invariance tests |
+| Banned scan across required roots | GATE-008 | Syntax/prose and script-tamper scanner tests |
+| E2E confirmation and flake boundary | GATE-009–GATE-010 | Reproducing, disappearing, and zero-selection integration cases |
 | Failure packet | PRM-001–PRM-007 | Golden prompt tests |
 | Bounded loop | CYC-001–CYC-013 | Fake-fixer state-machine tests |
 | Protected and banned verification | CYC-006–CYC-008, CYC-017 | Tamper acceptance test |
@@ -697,30 +738,26 @@ The smoke result proves the Dyad integration path only. It cannot replace the re
 | Four fixable defect classes | Acceptance matrix | Live and deterministic acceptance records |
 | Unsatisfiable, tamper, oscillation | Acceptance matrix | Three escalation records |
 | Mode B no extra manual work | CYC-004–CYC-006 | Live Dyad runbook acceptance |
+| Distinct terminal exit paths | CYC-018 | Timeout and precondition acceptance tests |
 | FINDINGS.md and README.md | Deliverable definition | Documentation review |
 
 ## 13. Implementation order
 
-The order follows dependency and test boundaries:
+Implementation proceeds as vertical red-green-refactor slices. For each item, add only the fixture needed to make the next requirement test fail, implement the smallest behavior that passes it, then run the next wider layer:
 
-1. Commit schemas, requirement-ID test conventions, and deterministic fixtures.
-2. Implement Git-state capture, path policy, banned scan, and their tamper tests.
-3. Implement diagnostic normalization, gate report, and signature tests.
-4. Implement tier 0 gates; prove Biome's hook rule with the smoke fixture.
-5. Implement the importer and prove two-export idempotency plus clean-clone build.
-6. Add Chromium Playwright infrastructure and commit SPEC-R1–SPEC-R8 red tests.
-7. Implement prompt construction with golden tests.
-8. Implement the cycle state machine against the fake fixer.
-9. Establish harness-green-v1 with tests present.
-10. Run the real Dyad Mode B smoke and document FINDINGS.md.
-11. Inject and run every SOW acceptance scenario using gpt-5.6-luna/high for final live evidence.
-12. Complete README.md, validate logs, and perform a clean-machine rehearsal.
+1. Git-state capture, path policy, syntax-aware banned scanning, and tamper cases.
+2. Diagnostic normalization, gate reporting, E2E confirmation, and signature/progress semantics.
+3. Import transaction, secret refusal, toolchain normalization, and profile/idempotency cases.
+4. Prompt construction and schema contracts.
+5. Cycle state machine, real Mode B watcher tests, budgets, and additive rollback.
+6. Commit SPEC-R1–SPEC-R8 red tests, establish `harness-green-v1`, and run live evidence.
+7. Complete the real two-export, clean-clone, performance, and acceptance-matrix rehearsal.
 
 Safety verification is implemented before any AI-driven loop. The real model is introduced only after the same cycle boundary passes deterministic tamper, no-progress, and rollback tests.
 
 ## 14. MVP definition of done
 
-The MVP is done only when all of the following are true:
+The reference machine is the local environment used for final acceptance; its OS, architecture, Node/npm versions, Chromium version, and measured gate timings must be recorded in FINDINGS.md. The MVP is done only when all of the following are true:
 
 - All IMP, GATE, PRM, CYC, and SPEC requirements have passing automated tests.
 - Both distinct Lovable exports import without importer edits.
@@ -730,11 +767,11 @@ The MVP is done only when all of the following are true:
 - Tier 0 meets a recorded seconds-scale target and Tier 1 a recorded low-minutes target on the reference machine.
 - The four fixable acceptance defects reach green within budget.
 - Unsatisfiable, tamper, and oscillation cases escalate for the expected reason.
-- Every escalation restores code to the verified green tree and leaves git status clean.
+- Every non-bootstrap escalation leaves a clean repository whose code tree equals `refs/harness/last-green`; `cycles.jsonl` may differ as audit data. A failed bootstrap instead restores its initial red tree.
 - cycles.jsonl has exactly one accurate record for each acceptance cycle.
 - gate-report.json, cycles.jsonl, and harness.json validate against their schemas.
 - A live Mode B run requires no manual step beyond the Dyad invocation and proposal approval.
-- Final live evidence declares Dyad 1.12, OpenAI gpt-5.6-luna, and high effort.
+- The owner-selected final live evidence declares Dyad 1.12, OpenAI gpt-5.6-luna, and high effort; the SOW itself does not mandate a provider/model.
 - No secret is committed or present in captured evidence.
 - README.md lets a new operator import, run, inject, and interpret a cycle.
 - FINDINGS.md records observed attempt counts, model metadata, handled and unhandled defects, and the exact work needed for unattended operation.

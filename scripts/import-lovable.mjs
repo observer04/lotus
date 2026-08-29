@@ -9,6 +9,8 @@ import { buildImportReport } from "./lib/import-report.mjs";
 import { runSync } from "./lib/process.mjs";
 import { ensureGitRepo, git, isClean, head } from "./lib/git-state.mjs";
 import { assertHarness } from "./lib/schema.mjs";
+import { scanSecrets } from "./lib/secrets.mjs";
+import { provesExhaustiveDependencies } from "./lib/biome-proof.mjs";
 
 const ROOT=fs.realpathSync(process.cwd());
 const sourceArg=process.argv[2];
@@ -18,6 +20,7 @@ if(!isClean(ROOT)){console.error("import requires a clean target repository");pr
 
 const HARNESS_FILES=["scripts","config","schemas","AI_RULES.md","biome.json","playwright.config.ts",".gitignore",".nvmrc"];
 const EXCLUDE_NAMES=new Set([".git","node_modules","dist","build","playwright-report","test-results",".harness"]);
+const INCIDENTAL_LOVABLE_BUN_FILES=["bun.lock","bun.lockb","bunfig.toml"];
 function secretName(name){ return name===".env"||name.startsWith(".env."); }
 function isUrl(s){ return /^(?:https?:\/\/|ssh:\/\/|git@)/.test(s); }
 function copyTree(src,dst,{sourceMode=false}={}){
@@ -36,6 +39,15 @@ function hashTree(dir){
   walk(dir); return `sha256:${hash.digest("hex")}`;
 }
 function requireOk(r,label){ if(r.status!==0){console.error(`${label} failed\n${r.stderr||r.stdout}`);process.exit(1);} }
+function normalizeIncidentalLovablePackageFiles(stage){
+  const pkg=JSON.parse(fs.readFileSync(path.join(stage,"package.json"),"utf8"));
+  if(pkg.packageManager && !String(pkg.packageManager).startsWith("npm@")) return;
+  for(const name of INCIDENTAL_LOVABLE_BUN_FILES) fs.rmSync(path.join(stage,name),{force:true});
+}
+function hydrateTarget(){
+  requireOk(runSync(["npm","ci","--ignore-scripts"],{cwd:ROOT,timeoutMs:300000}),"npm ci (target hydration)");
+  if(!isClean(ROOT)) throw new Error("target hydration changed tracked files");
+}
 
 const tmp=fs.mkdtempSync(path.join(os.tmpdir(),"lotus-import-"));
 let sourceRoot,sourceKind,resolvedCommit=null;
@@ -48,15 +60,24 @@ try{
     sourceKind="local"; sourceRoot=fs.realpathSync(path.resolve(sourceArg));
     if(sourceRoot===ROOT||ROOT.startsWith(sourceRoot+path.sep)||sourceRoot.startsWith(ROOT+path.sep)) throw new Error("source and target must be separate directories with no nesting");
   }
+  const sourceSecrets=scanSecrets({cwd:sourceRoot,policyPath:path.join(ROOT,"config","secret-patterns.json")});
+  if(sourceSecrets.length){
+    const locations=sourceSecrets.map(f=>`${f.id} ${f.path}:${f.line}`).join(", ");
+    throw new Error(`source contains possible committed secrets; import refused: ${locations}`);
+  }
   const sourceIdentity=sourceKind==="git"?`git:${resolvedCommit}`:hashTree(sourceRoot);
   const currentHarness=path.join(ROOT,"harness.json");
   if(fs.existsSync(currentHarness)){
     const existing=JSON.parse(fs.readFileSync(currentHarness,"utf8"));
-    if(existing.source?.identity===sourceIdentity){console.log(`No-op: source ${sourceIdentity} is already imported.`);process.exit(0);}
+    if(existing.source?.identity===sourceIdentity){
+      if(!fs.existsSync(path.join(ROOT,"node_modules",".bin","biome"))) hydrateTarget();
+      console.log(`No-op: source ${sourceIdentity} is already imported.`);process.exit(0);
+    }
     if(git(["rev-parse","--verify","baseline-v1"],{cwd:ROOT,allowFailure:true}).status===0) throw new Error("baseline-v1 already exists for a different import identity; refusing to move it");
   }
 
   const stage=path.join(tmp,"stage"); copyTree(sourceRoot,stage,{sourceMode:true});
+  normalizeIncidentalLovablePackageFiles(stage);
   let caps=detectCapabilities(stage);
 
   // Validate the source's own install/build before harness normalization.
@@ -86,13 +107,13 @@ try{
   caps=detectCapabilities(stage);
   const framework=caps.framework;
   const dev=framework==="vite"?["npm","run",caps.packageJson.scripts.dev?"dev":"start","--","--host","127.0.0.1","--port","{PORT}"]:["npm","run",caps.packageJson.scripts.dev?"dev":"start"];
-  const harness=assertHarness({schemaVersion:1,harnessVersion:"0.1.0",source:{kind:sourceKind,identity:sourceIdentity,...(resolvedCommit?{resolvedCommit}:{})},importedAt:new Date().toISOString(),nodeVersion:"22.16.0",framework,commands:{build:["npm","run","harness:build"],dev,typecheck:["npm","run","harness:typecheck"],lint:["npx","--no-install","biome","ci","src","e2e","--reporter=json"],e2e:["npx","--no-install","playwright","test","--project=chromium"]},writableGlobs:["src/**"],serverReadyTimeoutMs:30000});
+  const harness=assertHarness({schemaVersion:1,harnessVersion:"0.1.0",source:{kind:sourceKind,identity:sourceIdentity,...(resolvedCommit?{resolvedCommit}:{})},importedAt:new Date().toISOString(),nodeVersion:"22.16.0",framework,commands:{build:["npm","run","harness:build"],dev,typecheck:["npm","run","harness:typecheck"],lint:["node_modules/.bin/biome","ci","src","e2e","--reporter=json"],e2e:["node_modules/.bin/playwright","test","--project=chromium"]},writableGlobs:["src/**"],serverReadyTimeoutMs:30000});
   fs.writeFileSync(path.join(stage,"harness.json"),JSON.stringify(harness,null,2)+"\n");
 
   // Prove the configured hook rule actually fires.
   const smoke=path.join(stage,"src","__harness_exhaustive_deps_smoke.tsx"); fs.mkdirSync(path.dirname(smoke),{recursive:true}); fs.writeFileSync(smoke,'import { useEffect } from "react";\nexport function Smoke({value}:{value:number}){ useEffect(()=>{ console.log(value); },[]); return null; }\n');
   const biomeSmoke=runSync(["npx","--no-install","biome","lint",smoke,"--reporter=json"],{cwd:stage,timeoutMs:120000}); fs.rmSync(smoke,{force:true});
-  const smokeText=`${biomeSmoke.stdout}\n${biomeSmoke.stderr}`; if(biomeSmoke.status===0||!smokeText.includes("useExhaustiveDependencies")) throw new Error("Biome proof failed: useExhaustiveDependencies did not fire at error severity");
+  if(biomeSmoke.status===0||!provesExhaustiveDependencies(biomeSmoke.stdout)) throw new Error("Biome proof failed: useExhaustiveDependencies did not fire at error severity");
 
   requireOk(runSync(caps.commands.build,{cwd:stage,timeoutMs:180000}),"normalized build");
   const report=buildImportReport(stage,{...caps,commands:harness.commands}); fs.writeFileSync(path.join(stage,"import-report.md"),report.markdown);
@@ -108,5 +129,8 @@ try{
   const baseline=head(ROOT); const tag=git(["rev-parse","--verify","baseline-v1"],{cwd:ROOT,allowFailure:true});
   if(tag.status!==0) git(["tag","baseline-v1",baseline],{cwd:ROOT});
   else if(tag.stdout.trim()!==baseline) throw new Error("baseline-v1 exists and does not point at normalized import commit");
+  // Staging dependencies are intentionally never copied. Hydrate ignored local
+  // tools only after the tracked transaction and tag are durable.
+  hydrateTarget();
   console.log(`Imported ${sourceIdentity}`); console.log(`baseline-v1 -> ${baseline}`); console.log("Import report: import-report.md");
 }finally{fs.rmSync(tmp,{recursive:true,force:true});}

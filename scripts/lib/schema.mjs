@@ -22,6 +22,7 @@ export function assertGateReport(value) {
   requireString(value.commit,"commit");
   if(value.failureSignature!==null) requireString(value.failureSignature,"failureSignature");
   if (!Array.isArray(value.gates)) throw new Error("gates must be an array");
+  if("discardedFailureIds" in value && (!Array.isArray(value.discardedFailureIds) || value.discardedFailureIds.some(x=>typeof x!=="string"))) throw new Error("discardedFailureIds must be a string array");
   for(const [index,stage] of value.gates.entries()){
     if(!stage || typeof stage!=="object") throw new Error(`gate ${index} must be an object`);
     requireString(stage.gate,`gates[${index}].gate`);
@@ -36,14 +37,20 @@ export function assertGateReport(value) {
 
 export function assertCycleRecord(value) {
   if(!value || typeof value!=="object" || Array.isArray(value)) throw new Error("cycle record must be an object");
-  const required = ["schemaVersion","cycleId","startedAt","finishedAt","tier","startCommit","endCommit","attempts","outcome","reason","durationSec","filesChanged","dyad"];
+  const required = ["schemaVersion","cycleId","startedAt","finishedAt","tier","startCommit","endCommit","initialSignature","finalSignature","signatureHistory","attemptHistory","attempts","outcome","reason","durationSec","harnessDurationSec","invocationWaitSec","filesChanged","attemptedPaths","discardedFailureIds","dyad"];
   for (const key of required) if (!(key in value)) throw new Error(`cycle record missing ${key}`);
   if (value.schemaVersion !== 1) throw new Error("unsupported cycle schema");
   if (![0,1].includes(value.tier)) throw new Error("tier must be 0 or 1");
   if (!Number.isInteger(value.attempts) || value.attempts < 0) throw new Error("invalid attempts");
   if(!OUTCOMES.has(value.outcome)) throw new Error("invalid cycle outcome");
   if(!Array.isArray(value.filesChanged) || value.filesChanged.some(x=>typeof x!=="string")) throw new Error("filesChanged must be a string array");
-  if(!Number.isFinite(value.durationSec) || value.durationSec<0) throw new Error("invalid durationSec");
+  if(!Array.isArray(value.attemptedPaths) || value.attemptedPaths.some(x=>typeof x!=="string")) throw new Error("attemptedPaths must be a string array");
+  if(!Array.isArray(value.discardedFailureIds) || value.discardedFailureIds.some(x=>typeof x!=="string")) throw new Error("discardedFailureIds must be a string array");
+  if(!Array.isArray(value.signatureHistory) || value.signatureHistory.some(x=>x!==null&&typeof x!=="string")) throw new Error("signatureHistory must be a string/null array");
+  if(!Array.isArray(value.attemptHistory) || value.attemptHistory.length!==value.attempts) throw new Error("attemptHistory must contain one item per attempt");
+  if(value.initialSignature!==null) requireString(value.initialSignature,"initialSignature");
+  if(value.finalSignature!==null) requireString(value.finalSignature,"finalSignature");
+  for(const key of ["durationSec","harnessDurationSec","invocationWaitSec"]) if(!Number.isFinite(value[key]) || value[key]<0) throw new Error(`invalid ${key}`);
   for(const key of ["cycleId","startedAt","finishedAt","startCommit","endCommit","reason"]) requireString(value[key],key);
   if(!value.dyad || typeof value.dyad!=="object") throw new Error("dyad metadata is required");
   return value;
@@ -57,9 +64,15 @@ export function assertHarness(value) {
   requireString(value.nodeVersion,"nodeVersion");
   if(!value.source || typeof value.source!=="object") throw new Error("source metadata is required");
   requireString(value.source.kind,"source.kind"); requireString(value.source.identity,"source.identity");
+  if(!["local","git"].includes(value.source.kind)) throw new Error("source.kind must be local or git");
+  if("resolvedCommit" in value.source) requireString(value.source.resolvedCommit,"source.resolvedCommit");
+  if("importedAt" in value && (!Number.isFinite(Date.parse(value.importedAt)))) throw new Error("importedAt must be an ISO date-time");
+  if("framework" in value) requireString(value.framework,"framework");
   if(!value.commands || typeof value.commands!=="object") throw new Error("commands are required");
   for(const key of ["build","dev","typecheck","lint"]) if(!Array.isArray(value.commands[key]) || value.commands[key].length===0 || value.commands[key].some(x=>typeof x!=="string")) throw new Error(`commands.${key} must be a non-empty string argv array`);
+  if("e2e" in value.commands && (!Array.isArray(value.commands.e2e) || value.commands.e2e.length===0 || value.commands.e2e.some(x=>typeof x!=="string"))) throw new Error("commands.e2e must be a non-empty string argv array");
   if(!Array.isArray(value.writableGlobs) || value.writableGlobs.length===0 || value.writableGlobs.some(x=>typeof x!=="string")) throw new Error("writableGlobs must be a non-empty string array");
+  if("serverReadyTimeoutMs" in value && (!Number.isFinite(value.serverReadyTimeoutMs) || value.serverReadyTimeoutMs<0)) throw new Error("serverReadyTimeoutMs must be non-negative");
   return value;
 }
 

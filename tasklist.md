@@ -11,11 +11,15 @@ This file tracks the remaining work between the current implemented harness and 
 - [x] Stable diagnostic identities and failure signatures are implemented.
 - [x] Prompt packet construction, redaction, source-context bounds, and truncation are implemented.
 - [x] Default-deny Git protection and banned-pattern scanning are implemented.
-- [x] Mode B cycle runner, retry budgets, oscillation detection, no-progress detection, invocation timeout, and additive rollback are implemented.
+- [x] Mode B cycle runner, stage-aware retry budgets, oscillation detection, invocation timeout, and additive rollback are implemented.
+- [x] The real Mode B watcher is acceptance-tested for stable commits and stable uncommitted changes.
 - [x] Deterministic fake-fixer acceptance paths are implemented.
 - [x] Appendix A R1–R8 Playwright specification is present.
-- [x] Two distinct importer fixtures are present.
-- [x] Deterministic automated suite passed in the implementation sandbox: 44/44 tests.
+- [x] Two Lovable-style fixtures plus a non-Vite compatibility fixture are present; these do not replace two genuine-export evidence runs.
+- [x] Versioned source-secret refusal is implemented and tested without value disclosure.
+- [x] Deterministic automated suite passed in the implementation sandbox: 62/62 tests.
+- [x] A disposable real-npm synthetic rehearsal proved import, no-op re-import, baseline tagging, and normalized Tier 0 diagnostics; genuine-export evidence remains outstanding.
+- [x] Claude's adversarial review was dispositioned; accepted correctness and documentation findings are implemented.
 - [x] README and initial FINDINGS are present.
 
 ## Remaining before calling the MVP fully complete
@@ -23,9 +27,9 @@ This file tracks the remaining work between the current implemented harness and 
 ### 1. Validate on the reference/local machine
 
 - [ ] Sync `~/projects/lotus` to the current `main` commit.
-- [ ] Use Node 22.16.0 and run `npm ci`.
-- [ ] Run `npm test` on the reference machine and confirm the deterministic suite remains green there.
-- [ ] Install/verify Chromium for Playwright on that machine.
+- [x] Use Node 22.16.0 and run `npm ci` (template checkout passed on 2026-08-29).
+- [x] Run `npm test` on the reference machine and confirm the deterministic suite remains green there (62/62, 8.64 s).
+- [x] Verify local Chrome-for-Testing binaries are present; final imported-project rehearsal still must prove the pinned Playwright/browser pairing.
 - [ ] Run a real Tier 0 gate and record its duration.
 - [ ] Run a real Tier 1 gate and record its duration.
 - [ ] Confirm a generated `gate-report.json` validates and accurately reflects the real run.

@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import path from "node:path";
+import { parseJsonEnvelope } from "./biome-proof.mjs";
 
 function sha(text) {
   return `sha256:${crypto.createHash("sha256").update(text).digest("hex")}`;
@@ -16,7 +17,10 @@ export function makeFailure({ gate, file = "", line = null, column = null, rule,
   const normalizedFile = normalizeRepoPath(file, root);
   const identityRule = testId || rule || "UNKNOWN";
   const failureId = sha(`${gate}\n${normalizedFile}\n${identityRule}`);
-  return { failureId, gate, file: normalizedFile, line, column, rule: identityRule, message: String(message).trim(), testId };
+  const failureClassId=failureId;
+  // failureId is retained as a schema-v1 compatibility alias. Both fields
+  // identify a stable failure class, not an individual diagnostic occurrence.
+  return { failureId, failureClassId, gate, file: normalizedFile, line, column, rule: identityRule, message: String(message).trim(), testId };
 }
 
 export function failureSignature(failures) {
@@ -40,9 +44,8 @@ export function parseTsc(text, root = process.cwd()) {
 }
 
 export function parseBiome(text, root = process.cwd()) {
-  let parsed;
-  try { parsed = JSON.parse(text); }
-  catch { return text.trim() ? [makeFailure({gate:"lint", rule:"BIOME_EXIT", message:text.trim().slice(0,1000)}, root)] : []; }
+  const parsed=parseJsonEnvelope(text);
+  if(!parsed) return text.trim() ? [makeFailure({gate:"lint", rule:"BIOME_EXIT", message:text.trim().slice(0,1000)}, root)] : [];
   const diagnostics = parsed.diagnostics ?? parsed.summary?.diagnostics ?? [];
   return diagnostics.map(d => {
     const loc = d.location ?? {};
@@ -82,6 +85,29 @@ export function parsePlaywright(text, root = process.cwd()) {
   return failures;
 }
 
+export function playwrightSelection(text){
+  let parsed;
+  try { parsed=JSON.parse(text); } catch { return {testCount:0,testIds:[]}; }
+  const specs=flattenPlaywrightSuites(parsed.suites);
+  const tests=specs.flatMap(spec=>(spec.tests??[]).map(test=>({spec,test})));
+  const ids=[];
+  for(const {spec} of tests){
+    const match=String(spec.title??"").match(/^\s*(R[1-8])\b/);
+    if(match) ids.push(match[1]);
+  }
+  return {testCount:tests.length,testIds:[...new Set(ids)].sort()};
+}
+
 export function parseBuild(text, root=process.cwd()) {
+  const failures=[];
+  const location=/^(.+?\.(?:[cm]?[jt]sx?|css|html)):(\d+):(\d+):\s*(.+)$/gm;
+  for(const match of text.matchAll(location)){
+    failures.push(makeFailure({gate:"build",file:match[1],line:Number(match[2]),column:Number(match[3]),rule:"BUILD_DIAGNOSTIC",message:match[4]},root));
+  }
+  const resolve=/\b(?:failed to resolve import|could not resolve)\s+["'][^"']+["']\s+(?:from|in)\s+["']([^"']+)["']/gi;
+  for(const match of text.matchAll(resolve)){
+    failures.push(makeFailure({gate:"build",file:match[1],rule:"BUILD_RESOLVE",message:match[0]},root));
+  }
+  if(failures.length) return failures;
   return [makeFailure({ gate:"build", rule:"BUILD_EXIT", message:text.trim() ? text.trim().split(/\r?\n/).slice(-10).join(" ") : "build command exited non-zero" }, root)];
 }

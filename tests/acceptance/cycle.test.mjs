@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
+import { spawn } from "node:child_process";
 import { tempDir,initRepo,commitAll,copyHarnessCore,run,readJsonl,PROJECT_ROOT,git } from "../helpers/test-utils.mjs";
 
 function setupCycle(initialState){
@@ -27,9 +28,40 @@ function cycle(root,mode){
 }
 function codeState(root){return fs.readFileSync(path.join(root,"src/state.txt"),"utf8").trim();}
 
+async function interactiveCycle(root,{commit=false}={}){
+  const child=spawn("bash",["scripts/cycle.sh","0"],{cwd:root,env:{
+    ...process.env,
+    HARNESS_INVOCATION_TIMEOUT_MS:"5000",
+    HARNESS_CYCLE_TIMEOUT_MS:"30000",
+    HARNESS_POLL_MS:"20",
+    HARNESS_COMMIT_STABLE_POLLS:"2",
+    HARNESS_DIRTY_STABLE_POLLS:"2",
+    DYAD_VERSION:"1.12.0",
+    DYAD_PROVIDER:"test",
+    DYAD_MODEL:"interactive-fixture",
+    DYAD_REASONING_EFFORT:"none"
+  },stdio:["ignore","pipe","pipe"]});
+  let stdout="",stderr="";
+  child.stdout.on("data",d=>stdout+=d);
+  child.stderr.on("data",d=>stderr+=d);
+  const prompt=path.join(root,".harness","active-prompt.md");
+  const deadline=Date.now()+4000;
+  while(!fs.existsSync(prompt)&&Date.now()<deadline) await new Promise(resolve=>setTimeout(resolve,20));
+  assert.equal(fs.existsSync(prompt),true,stdout+stderr);
+  fs.writeFileSync(path.join(root,"src/state.txt"),"FIXED\n");
+  if(commit) commitAll(root,"mode-b:test");
+  const result=await new Promise((resolve,reject)=>{
+    const timer=setTimeout(()=>{child.kill("SIGKILL");reject(new Error("interactive cycle timed out"));},8000);
+    child.on("error",reject);
+    child.on("close",status=>{clearTimeout(timer);resolve({status,stdout,stderr});});
+  });
+  return result;
+}
+
 test("CYC-002/CYC-017 fake fixer reaches verified green and records exactly one cycle",()=>{
   const {root}=setupCycle("BROKEN"); const r=cycle(root,"green"); assert.equal(r.status,0,r.stderr||r.stdout); assert.equal(codeState(root),"FIXED");
-  const records=readJsonl(path.join(root,"cycles.jsonl")); assert.equal(records.length,1); assert.equal(records[0].outcome,"green"); assert.equal(records[0].attempts,1); assert.deepEqual(records[0].filesChanged,["src/state.txt"]);
+  const records=readJsonl(path.join(root,"cycles.jsonl")); assert.equal(records.length,1); assert.equal(records[0].outcome,"green"); assert.equal(records[0].attempts,1); assert.deepEqual(records[0].filesChanged,["src/state.txt"]); assert.deepEqual(records[0].attemptedPaths,["src/state.txt"]);
+  assert.equal(records[0].attemptHistory.length,1); assert.equal(records[0].signatureHistory.length,2);
   assert.equal(git(root,["status","--porcelain"]).stdout,"");
   const lastGreen=git(root,["rev-parse","refs/harness/last-green"]).stdout.trim(); assert.equal(lastGreen,records[0].endCommit);
 });
@@ -37,6 +69,8 @@ test("CYC-002/CYC-017 fake fixer reaches verified green and records exactly one 
 test("CYC-008 tamper bait is caught structurally and additive rollback restores green",()=>{
   const {root,green}=setupCycle("BROKEN"); const r=cycle(root,"tamper"); assert.equal(r.status,5,r.stderr||r.stdout); assert.equal(codeState(root),"FIXED"); assert.equal(fs.existsSync(path.join(root,"e2e/tamper.spec.js")),false);
   const records=readJsonl(path.join(root,"cycles.jsonl")); assert.equal(records.at(-1).outcome,"escalated_safety"); assert.equal(records.at(-1).reason,"safety_violation");
+  assert.equal(records.at(-1).filesChanged.includes("e2e/tamper.spec.js"),false); assert.equal(records.at(-1).attemptedPaths.includes("e2e/tamper.spec.js"),true);
+  assert.equal(records.at(-1).attemptHistory.at(-1).terminal,"safety_violation");
   assert.equal(git(root,["status","--porcelain"]).stdout,"");
   const log=git(root,["log","--format=%s","-6"]).stdout; assert.match(log,/fake-fixer:tamper/); assert.match(log,/restore verified tree/);
   assert.equal(git(root,["rev-parse","refs/harness/last-green"]).stdout.trim(),green);
@@ -67,6 +101,7 @@ test("CYC-018 invocation timeout is distinct and rolls back partial cycle state"
   const r=run(["bash","scripts/cycle.sh","0"],{cwd:root,env:{HARNESS_FIXER_EXEC:process.execPath,HARNESS_FIXER_ARGS_JSON:JSON.stringify(["tests/helpers/fake-fixer.mjs","sleep"]),HARNESS_INVOCATION_TIMEOUT_MS:"100",HARNESS_CYCLE_TIMEOUT_MS:"5000"},timeout:10000,allowFailure:true});
   assert.equal(r.status,4,r.stderr||r.stdout); assert.equal(codeState(root),"FIXED");
   const rec=readJsonl(path.join(root,"cycles.jsonl")).at(-1); assert.equal(rec.outcome,"invocation_timeout"); assert.equal(git(root,["status","--porcelain"]).stdout,"");
+  assert.equal(rec.attemptHistory.at(-1).terminal,"invocation_timeout");
 });
 
 test("CYC-018 missing last-green ref is recorded as precondition_failed",()=>{
@@ -80,4 +115,24 @@ test("CYC bootstrap establishes immutable harness-green-v1 and last-green ref",(
   const r=run(["bash","scripts/cycle.sh","0","--bootstrap"],{cwd:root,env:{HARNESS_FIXER_EXEC:process.execPath,HARNESS_FIXER_ARGS_JSON:JSON.stringify(["tests/helpers/fake-fixer.mjs","green"]),HARNESS_INVOCATION_TIMEOUT_MS:"5000",HARNESS_CYCLE_TIMEOUT_MS:"30000"},timeout:15000,allowFailure:true});
   assert.equal(r.status,0,r.stderr||r.stdout); assert.equal(codeState(root),"FIXED");
   const tag=git(root,["rev-parse","refs/tags/harness-green-v1"]).stdout.trim(); const ref=git(root,["rev-parse","refs/harness/last-green"]).stdout.trim(); assert.equal(tag,ref);
+});
+
+test("CYC-004/CYC-005 real Mode B watcher accepts a stable Dyad-style commit",async()=>{
+  const {root}=setupCycle("BROKEN");
+  const r=await interactiveCycle(root,{commit:true});
+  assert.equal(r.status,0,r.stderr||r.stdout);
+  assert.equal(codeState(root),"FIXED");
+  const rec=readJsonl(path.join(root,"cycles.jsonl")).at(-1);
+  assert.equal(rec.outcome,"green");
+  assert.equal(rec.dyad.metadataSource,"operator-declared");
+  assert.equal(git(root,["status","--porcelain"]).stdout,"");
+});
+
+test("CYC-005/CYC-007 real Mode B watcher captures stable uncommitted source edits",async()=>{
+  const {root}=setupCycle("BROKEN");
+  const r=await interactiveCycle(root,{commit:false});
+  assert.equal(r.status,0,r.stderr||r.stdout);
+  assert.equal(codeState(root),"FIXED");
+  assert.match(git(root,["log","--format=%s","-4"]).stdout,/capture repair attempt/);
+  assert.equal(git(root,["status","--porcelain"]).stdout,"");
 });

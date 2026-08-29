@@ -45,3 +45,13 @@ test("PRM-003 packet shows only first 20 failures and marks truncation",()=>{
   const root=tempDir(); const failures=Array.from({length:25},(_,i)=>makeFailure({gate:"lint",file:`src/f${String(i).padStart(2,"0")}.ts`,rule:`R${i}`,message:`m${i}`},root));
   const r={...report(root,failures),tier:0,gates:[{gate:"lint",status:"failed",durationMs:1,failures}]}; const text=buildPrompt(r,{cwd:root}); assert.match(text,/FAILURES \(25, showing 20\)/); assert.doesNotMatch(text,/src\/f24\.ts/);
 });
+
+test("PRM-004 source context follows configured writable roots instead of hardcoding src",()=>{
+  const root=tempDir(); fs.mkdirSync(path.join(root,"app"),{recursive:true});
+  fs.writeFileSync(path.join(root,"app/main.ts"),"const one = 1;\nconst broken = nope;\n");
+  const f=makeFailure({gate:"typecheck",file:"app/main.ts",line:2,rule:"TS1",message:"broken"},root);
+  const r={...report(root,[f]),tier:0,gates:[{gate:"typecheck",status:"failed",durationMs:1,failures:[f]}]};
+  const text=buildPrompt(r,{cwd:root,writableGlobs:["app/**"]});
+  assert.match(text,/app\/main\.ts:2/);
+  assert.match(text,/const broken/);
+});

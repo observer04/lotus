@@ -11,3 +11,4 @@ test-results/
 *.log
 .DS_Store
 gate-report.json
+.gate-report.*.tmp

@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { pathIsWritable } from "./protection.mjs";
 
 export function redact(text) {
   let out=String(text);
@@ -13,8 +14,7 @@ export function redact(text) {
     .replace(/\b(OPENAI_API_KEY|GOOGLE_API_KEY|OPENROUTER_API_KEY)\s*=\s*[^\s]+/g,"$1=[REDACTED]");
 }
 
-function sourceFiles(cwd){
-  const root=path.join(cwd,"src");
+function sourceFiles(cwd,writableGlobs=["src/**"]){
   const out=[];
   const walk=(dir)=>{
     if(!fs.existsSync(dir)) return;
@@ -24,12 +24,13 @@ function sourceFiles(cwd){
       else if(ent.isFile() && /\.(?:js|jsx|ts|tsx)$/.test(ent.name)) out.push(abs);
     }
   };
-  walk(root);
+  const roots=[...new Set(writableGlobs.filter(g=>g.endsWith("/**")).map(g=>g.slice(0,-3)))];
+  for(const root of roots) walk(path.join(cwd,root));
   return out.sort();
 }
 
-function renderContext(cwd,file,line,radius=15,label=null){
-  if(!file||!file.startsWith("src/")||!line) return null;
+function renderContext(cwd,file,line,radius=15,label=null,writableGlobs=["src/**"]){
+  if(!file||!pathIsWritable(file,writableGlobs)||!line) return null;
   const abs=path.join(cwd,file);
   if(!fs.existsSync(abs)) return null;
   const lines=fs.readFileSync(abs,"utf8").split(/\r?\n/);
@@ -38,11 +39,11 @@ function renderContext(cwd,file,line,radius=15,label=null){
   return `### ${label??`${file}:${line}`}\n\`\`\`\n${body}\n\`\`\``;
 }
 
-function clipContext(cwd,failure,radius=15){
-  return renderContext(cwd,failure.file,failure.line,radius);
+function clipContext(cwd,failure,radius=15,writableGlobs=["src/**"]){
+  return renderContext(cwd,failure.file,failure.line,radius,null,writableGlobs);
 }
 
-function e2eSourceCandidates(cwd,failure,radius=15){
+function e2eSourceCandidates(cwd,failure,radius=15,writableGlobs=["src/**"]){
   if(failure.gate!=="e2e" || !failure.file) return [];
   const testAbs=path.join(cwd,failure.file);
   if(!fs.existsSync(testAbs)) return [];
@@ -53,12 +54,12 @@ function e2eSourceCandidates(cwd,failure,radius=15){
   const unique=[...new Set(ids)];
   const contexts=[];
   for(const id of unique){
-    for(const abs of sourceFiles(cwd)){
+    for(const abs of sourceFiles(cwd,writableGlobs)){
       const lines=fs.readFileSync(abs,"utf8").split(/\r?\n/);
       for(let i=0;i<lines.length;i++){
         if(!lines[i].includes(id)) continue;
         const rel=path.relative(cwd,abs).split(path.sep).join("/");
-        const rendered=renderContext(cwd,rel,i+1,radius,`${rel}:${i+1} (candidate for data-testid=${id})`);
+        const rendered=renderContext(cwd,rel,i+1,radius,`${rel}:${i+1} (candidate for data-testid=${id})`,writableGlobs);
         if(rendered) contexts.push(rendered);
         if(contexts.length>=3) return contexts;
       }
@@ -95,8 +96,8 @@ export function buildPrompt(report,{cycle=1,maxAttempts=6,attempt=1,priorAttempt
   const contexts=[];
   const seen=new Set();
   for(const failure of selected){
-    const direct=clipContext(cwd,failure);
-    for(const c of [direct,...e2eSourceCandidates(cwd,failure)].filter(Boolean)){
+    const direct=clipContext(cwd,failure,15,writableGlobs);
+    for(const c of [direct,...e2eSourceCandidates(cwd,failure,15,writableGlobs)].filter(Boolean)){
       if(!seen.has(c)){seen.add(c);contexts.push(c);}
     }
   }

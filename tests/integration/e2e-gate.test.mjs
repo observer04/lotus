@@ -21,3 +21,9 @@ test("GATE-009 reproducible e2e failure survives confirmation",()=>{
   const root=setup(); const r=run(["bash","scripts/gate.sh","1"],{cwd:root,env:{HARNESS_E2E_DRIVER_MODE:"confirmed"},timeout:15000,allowFailure:true});
   assert.equal(r.status,1,r.stderr); const report=readJson(path.join(root,"gate-report.json")); assert.equal(report.status,"failed"); const e2e=report.gates.at(-1); assert.equal(e2e.status,"failed"); assert.equal(e2e.failures[0].rule,"R4"); assert.equal(report.failureCount,1);
 });
+
+test("GATE-009 confirmation selecting zero tests is errored, never classified as flaky",()=>{
+  const root=setup(); const r=run(["bash","scripts/gate.sh","1"],{cwd:root,env:{HARNESS_E2E_DRIVER_MODE:"zero-selected"},timeout:15000,allowFailure:true});
+  assert.equal(r.status,1,r.stderr); const report=readJson(path.join(root,"gate-report.json")); assert.equal(report.status,"errored");
+  const e2e=report.gates.at(-1); assert.equal(e2e.status,"errored"); assert.equal(e2e.failures[0].rule,"PLAYWRIGHT_CONFIRMATION_EMPTY");
+});

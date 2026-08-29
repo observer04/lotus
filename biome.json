@@ -3,7 +3,6 @@
   "files":{"ignore":[".harness","node_modules","dist","build","playwright-report","test-results"]},
   "linter":{
     "enabled":true,
-    "domains":{"react":"recommended"},
     "rules":{"recommended":true,"correctness":{"useExhaustiveDependencies":"error"}}
   }
 }

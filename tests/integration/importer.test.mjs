@@ -6,7 +6,7 @@ import { tempDir,initRepo,commitAll,copyHarnessCore,run,readJson,PROJECT_ROOT,gi
 
 function fakeTools(){
   const bin=tempDir("lotus-fake-bin-");
-  const npm=`#!/usr/bin/env node\nimport fs from 'node:fs';\nif(process.argv.slice(2).includes('--package-lock-only')){const pkg=JSON.parse(fs.readFileSync('package.json','utf8'));fs.writeFileSync('package-lock.json',JSON.stringify({name:pkg.name??'app',version:pkg.version??'0.0.0',lockfileVersion:3,requires:true,packages:{'':{name:pkg.name??'app',version:pkg.version??'0.0.0'}}},null,2)+'\\n');}\nprocess.exit(0);\n`;
+  const npm=`#!/usr/bin/env node\nimport fs from 'node:fs';\nconst args=process.argv.slice(2);\nif(args.includes('--package-lock-only')){const pkg=JSON.parse(fs.readFileSync('package.json','utf8'));fs.writeFileSync('package-lock.json',JSON.stringify({name:pkg.name??'app',version:pkg.version??'0.0.0',lockfileVersion:3,requires:true,packages:{'':{name:pkg.name??'app',version:pkg.version??'0.0.0'}}},null,2)+'\\n');}\nif(args[0]==='ci'){fs.mkdirSync('node_modules/.bin',{recursive:true});fs.writeFileSync('node_modules/.bin/biome','#!/bin/sh\\nexit 0\\n',{mode:0o755});}\nprocess.exit(0);\n`;
   const npx=`#!/usr/bin/env node\nconst a=process.argv.slice(2).join(' ');\nif(a.includes('biome lint')&&a.includes('__harness_exhaustive_deps_smoke')){console.log(JSON.stringify({diagnostics:[{category:'lint/correctness/useExhaustiveDependencies',severity:'error',message:'missing dependency'}]}));process.exit(1);}\nif(a.includes('biome')){console.log(JSON.stringify({diagnostics:[]}));process.exit(0);}\nprocess.exit(0);\n`;
   fs.writeFileSync(path.join(bin,"npm"),npm,{mode:0o755}); fs.writeFileSync(path.join(bin,"npx"),npx,{mode:0o755}); return bin;
 }
@@ -22,11 +22,13 @@ function runImport(root,source,bin){
 
 test("IMP-001 through IMP-015 importer is reusable, idempotent, and reports six checks",()=>{
   const bin=fakeTools();
-  for(const fixture of ["lovable-vite-react","lovable-vite-react-ts"]){
+  for(const fixture of ["lovable-vite-react","lovable-vite-react-ts","react-custom-bundler"]){
     const root=target(); const source=path.join(PROJECT_ROOT,"tests/fixtures",fixture);
     const first=runImport(root,source,bin); assert.equal(first.status,0,first.stderr||first.stdout);
     assert.equal(git(root,["rev-parse","--verify","baseline-v1"],{allowFailure:true}).status,0);
     const cfg=readJson(path.join(root,"harness.json")); assert.equal(cfg.source.kind,"local"); assert.deepEqual(cfg.writableGlobs,["src/**"]);
+    assert.equal(cfg.framework,fixture==="react-custom-bundler"?"node-frontend":"vite");
+    assert.equal(cfg.commands.lint[0],"node_modules/.bin/biome"); assert.equal(fs.existsSync(path.join(root,"node_modules/.bin/biome")),true);
     assert.equal(fs.existsSync(path.join(root,"e2e",".gitkeep")),true); assert.equal(fs.existsSync(path.join(root,"e2e","coffee-ordering.spec.ts")),false);
     const report=fs.readFileSync(path.join(root,"import-report.md"),"utf8");
     for(const heading of ["Float currency math","data-testid coverage","Typecheck baseline","Lint baseline","Banned patterns","Dependencies outside platform list"]) assert.match(report,new RegExp(`## ${heading.replace(/[.*+?^${}()|[\\]\\\\]/g,"\\\\$&")}`));
@@ -37,10 +39,17 @@ test("IMP-001 through IMP-015 importer is reusable, idempotent, and reports six 
   }
 });
 
-test("IMP-004/IMP-005 missing lockfile is generated before ci and source secrets are excluded",()=>{
+test("IMP-004/IMP-005 current Lovable Bun artifacts normalize to npm and environment files are excluded",()=>{
   const bin=fakeTools(); const source=tempDir("lotus-source-no-lock-"); fs.cpSync(path.join(PROJECT_ROOT,"tests/fixtures/lovable-vite-react"),source,{recursive:true});
-  fs.rmSync(path.join(source,"package-lock.json")); fs.writeFileSync(path.join(source,".env"),"SECRET=do-not-copy\n");
-  const root=target(); const r=runImport(root,source,bin); assert.equal(r.status,0,r.stderr||r.stdout); assert.equal(fs.existsSync(path.join(root,"package-lock.json")),true); assert.equal(fs.existsSync(path.join(root,".env")),false);
+  fs.rmSync(path.join(source,"package-lock.json")); fs.writeFileSync(path.join(source,"bun.lock"),"incidental lovable lock\n"); fs.writeFileSync(path.join(source,"bunfig.toml"),"[install]\n"); fs.writeFileSync(path.join(source,".env"),"SECRET=do-not-copy\n");
+  const root=target(); const r=runImport(root,source,bin); assert.equal(r.status,0,r.stderr||r.stdout); assert.equal(fs.existsSync(path.join(root,"package-lock.json")),true); assert.equal(fs.existsSync(path.join(root,"bun.lock")),false); assert.equal(fs.existsSync(path.join(root,"bunfig.toml")),false); assert.equal(fs.existsSync(path.join(root,".env")),false);
+});
+
+test("IMP-016 rejects high-confidence secret literals without printing their values",()=>{
+  const bin=fakeTools(); const source=tempDir("lotus-source-secret-"); fs.cpSync(path.join(PROJECT_ROOT,"tests/fixtures/lovable-vite-react"),source,{recursive:true});
+  const secret=["sk","proj","abcdefghijklmnopqrstuvwxyz123456"].join("-"); fs.writeFileSync(path.join(source,"src","secret.js"),`export const token = "${secret}";\n`);
+  const root=target(); const r=runImport(root,source,bin); assert.notEqual(r.status,0);
+  const output=`${r.stderr}\n${r.stdout}`; assert.match(output,/OPENAI_KEY src\/secret\.js:1/); assert.doesNotMatch(output,new RegExp(secret)); assert.equal(fs.existsSync(path.join(root,"src","secret.js")),false);
 });
 
 test("IMP-002 rejects symlink-bearing source rather than following escapes",()=>{

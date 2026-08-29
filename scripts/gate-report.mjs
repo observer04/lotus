@@ -2,7 +2,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { scanBanned } from "./lib/scan.mjs";
-import { makeFailure, failureSignature, parseBiome, parseTsc, parseBuild, parsePlaywright } from "./lib/diagnostics.mjs";
+import { makeFailure, failureSignature, parseBiome, parseTsc, parseBuild, parsePlaywright, playwrightSelection } from "./lib/diagnostics.mjs";
 import { runSync, getFreePort, startProcess, stopProcessGroup, waitForHttp } from "./lib/process.mjs";
 import { head } from "./lib/git-state.mjs";
 import { assertGateReport } from "./lib/schema.mjs";
@@ -77,9 +77,15 @@ async function runE2E(stageStarted){
   let failures=parsePlaywright(first.json||first.stdout||first.stderr,ROOT);
   if(!failures.length) return {gate:"e2e",status:"failed",durationMs:Date.now()-stageStarted,failures:[makeFailure({gate:"e2e",rule:"PLAYWRIGHT_EXIT",message:first.stderr||"Playwright exited non-zero"},ROOT)]};
   const ids=[...new Set(failures.map(f=>f.testId||f.rule).filter(Boolean))];
-  const grep=ids.length?`^(${ids.map(x=>String(x).replace(/[.*+?^${}()|[\]\\]/g,"\\$&")).join("|")})\\b`:null;
+  const grep=ids.length?`\\b(?:${ids.map(x=>String(x).replace(/[.*+?^${}()|[\]\\]/g,"\\$&")).join("|")})\\b`:null;
   const confirm=await executeOnce(grep,"confirm");
   if(confirm.status===124) return {gate:"e2e",status:"errored",durationMs:Date.now()-stageStarted,failures:[makeFailure({gate:"e2e",rule:"APP_READY_TIMEOUT",message:confirm.stderr||"application did not become ready for confirmation"},ROOT)]};
+  const selection=playwrightSelection(confirm.json||"");
+  const missingIds=ids.filter(id=>!selection.testIds.includes(id));
+  if(selection.testCount===0||missingIds.length){
+    const message=selection.testCount===0?"confirmation selected zero tests":`confirmation did not select: ${missingIds.join(", ")}`;
+    return {gate:"e2e",status:"errored",durationMs:Date.now()-stageStarted,failures:[makeFailure({gate:"e2e",rule:"PLAYWRIGHT_CONFIRMATION_EMPTY",message},ROOT)]};
+  }
   const confirmed=confirm.status===0?[]:parsePlaywright(confirm.json||confirm.stdout||confirm.stderr,ROOT);
   if(!confirmed.length) return {gate:"e2e",status:"inconclusive",durationMs:Date.now()-stageStarted,failures:[],discardedFailureIds:ids};
   const confirmedIds=new Set(confirmed.map(f=>f.testId||f.rule)); failures=failures.filter(f=>confirmedIds.has(f.testId||f.rule));
@@ -92,7 +98,8 @@ for(const name of order){
   catch(error){ stages.push({gate:name,status:"errored",durationMs:0,failures:[makeFailure({gate:name,rule:"HARNESS_EXCEPTION",message:error?.stack||String(error)},ROOT)]}); terminal="errored"; }
 }
 const failures=stages.flatMap(s=>s.failures??[]); const status=terminal??"passed";
-const report={schemaVersion:1,runId,tier,commit,status,failureCount:failures.length,failureSignature:failureSignature(failures),durationMs:Date.now()-started,gates:stages};
+const discardedFailureIds=[...new Set(stages.flatMap(s=>s.discardedFailureIds??[]))].sort();
+const report={schemaVersion:1,runId,tier,commit,status,failureCount:failures.length,failureSignature:failureSignature(failures),durationMs:Date.now()-started,gates:stages,...(discardedFailureIds.length?{discardedFailureIds}:{})};
 assertGateReport(report);
 const tmp=path.join(ROOT,`.gate-report.${process.pid}.tmp`); fs.writeFileSync(tmp,JSON.stringify(report,null,2)+"\n"); const fd=fs.openSync(tmp,"r"); fs.fsyncSync(fd); fs.closeSync(fd); fs.renameSync(tmp,path.join(ROOT,"gate-report.json"));
 console.log(JSON.stringify(report,null,2));

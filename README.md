@@ -11,6 +11,7 @@ The coffee-ordering application from the SOW is an acceptance specimen. The harn
 - Package manager: npm
 - Dyad: `1.12.0` stable
 - Dyad loop mode: Mode B, GUI Build mode
+- Owner-selected final evidence profile: OpenAI `gpt-5.6-luna`, high effort (not a SOW requirement)
 - Default writable scope during a repair: `src/**`
 - Gates: standards → Biome → TypeScript → build → optional Chromium Playwright
 
@@ -41,7 +42,7 @@ Start from a clean checkout of this harness and run:
 The importer:
 
 1. validates source/target paths and refuses symlinks;
-2. copies into a staging transaction while excluding `.git`, `node_modules`, build output and environment secrets;
+2. excludes `.env*`, scans for versioned high-confidence committed-secret patterns without printing values, and copies into a staging transaction;
 3. creates `package-lock.json` before `npm ci` when necessary;
 4. verifies the source install/build;
 5. pins Node, Biome and Playwright scaffolding;
@@ -124,9 +125,9 @@ The only Mode B operator action is:
 1. open the already-imported repository in Dyad 1.12;
 2. select **Build** mode and the declared model;
 3. paste `.harness/active-prompt.md`;
-4. approve or reject the proposal.
+4. approve the proposal if it is acceptable. A rejection/no-write is eventually recorded as a distinct invocation timeout because Mode B exposes no rejection signal to Lotus.
 
-Lotus waits for the Dyad-created Git state to settle, then verifies the complete `before..after` SHA range plus staged, unstaged and untracked state. Dyad cannot obtain green by editing tests/config/package metadata or by committing those edits before the harness notices.
+Lotus accepts either a stable Dyad commit or stable uncommitted changes, then verifies the complete `before..after` SHA range plus staged, unstaged and untracked state. Clean commits must be unchanged for 10 seconds; dirty edits for 30 seconds. Allowed dirty edits are captured in a harness commit. Dyad cannot obtain green by editing tests/config/package metadata or by committing those edits before the harness notices.
 
 ### Protection policy
 
@@ -137,7 +138,7 @@ By default only `src/**` is writable. Everything else is denied, including:
 - `package.json`, `package-lock.json`, `.nvmrc`, `.gitignore`;
 - `AI_RULES.md`, `harness.json`, `cycles.jsonl`.
 
-The structural scanner also rejects:
+The structural scanner examines `src/`, `e2e/`, and `scripts/` and rejects actual code/directive forms of:
 
 `@ts-ignore`, `@ts-expect-error`, `as any`, `biome-ignore`, `test.skip`, `test.only`, `xit`, `describe.skip`, `continue-on-error`, and `|| true`.
 
@@ -151,11 +152,17 @@ A cycle stops on:
 - same signature: 3 attempts;
 - total attempts: 6;
 - A → B → A signature recurrence: first recurrence;
-- failure count not decreasing for 2 consecutive results;
-- wall clock: 20 minutes by default;
+- no improvement for 2 consecutive results, comparing furthest fail-fast stage and that stage's diagnostic count;
+- harness execution clock: 20 minutes by default, excluding Mode B invocation wait;
 - Dyad invocation timeout: 10 minutes by default.
 
-On escalation Lotus creates an additive rollback commit whose code tree equals the last verified green tree. Failed/red commits remain in ancestry. No `git reset --hard` or force operation is used.
+For repeated identical failures, no-progress normally stops after two attempts; the three-attempt signature cap is a backstop for a stable class whose diagnostic count is improving. A completed green gate always wins even if the execution clock expires during that gate.
+
+On non-bootstrap escalation Lotus creates an additive rollback commit whose code tree equals the last verified green tree. Failed/red commits remain in ancestry. No `git reset --hard` or force operation is used. The proof command is:
+
+```bash
+git diff --quiet refs/harness/last-green HEAD -- . ':!cycles.jsonl'
+```
 
 ## 5. Exit codes
 
@@ -173,10 +180,14 @@ Every completed cycle appends one schema-validated line to `cycles.jsonl`, inclu
 
 - start/end code SHA;
 - initial/final failure signature;
+- signature and per-attempt history, without raw model conversation text;
 - attempt count and terminal reason;
-- changed paths;
-- duration;
+- net changed paths and all attempted paths, including rolled-back tamper paths;
+- wall, harness-execution, and invocation-wait durations;
+- discarded E2E failure IDs;
 - declared Dyad version/provider/model/effort.
+
+Undeclared model metadata is stored as null with `metadataSource: "undeclared"`; Lotus never guesses a model/profile for an audit claim.
 
 Per-attempt prompts, reports and verification details remain under `.harness/runs/` and are intentionally untracked.
 
@@ -206,7 +217,7 @@ The suite covers:
 - diagnostic parsing/signature invariance;
 - prompt ordering, source mapping, redaction and byte limits;
 - capability detection and import rejection paths;
-- two-export import reuse/idempotency;
+- two Lovable-style import fixtures plus a non-Vite compatibility fixture, with reuse/idempotency;
 - missing-lockfile and secret-exclusion behavior;
 - ordered Tier 0 gates and fail-fast reporting;
 - reproducible vs flaky Tier 1 E2E boundaries;
@@ -219,8 +230,9 @@ The suite covers:
 - invocation timeout;
 - additive rollback and clean-tree invariants;
 - bootstrap creation of `harness-green-v1`.
+- real Mode B watcher capture for both committed and uncommitted edits.
 
-`tests/helpers/fake-fixer.mjs` crosses the same watcher/verifier boundary as Mode B. It is a deterministic test adapter, not an alternate production fixer.
+`tests/helpers/fake-fixer.mjs` crosses the same verifier and state-machine boundary as Mode B. Separate acceptance cases exercise the actual interactive watcher for both committed and uncommitted edits. The fake fixer is a deterministic test adapter, not an alternate production fixer.
 
 ## 9. Playwright acceptance spec
 
@@ -236,14 +248,16 @@ Useful environment variables:
 HARNESS_INVOCATION_TIMEOUT_MS  default 600000
 HARNESS_CYCLE_TIMEOUT_MS       default 1200000
 HARNESS_POLL_MS                default 2000
-HARNESS_STABLE_POLLS           default 3
+HARNESS_COMMIT_STABLE_POLLS    default 5
+HARNESS_DIRTY_STABLE_POLLS     default 15
 HARNESS_PROMPT_MAX_BYTES       default 49152
+DYAD_VERSION                   metadata only
 DYAD_PROVIDER                  metadata only
 DYAD_MODEL                     metadata only
 DYAD_REASONING_EFFORT          metadata only
 ```
 
-Secrets belong in Dyad/provider settings or process environment. The harness never needs an LLM key for deterministic tests and redacts common key shapes from prompt/log material.
+Secrets belong in Dyad/provider settings or process environment. The harness never needs an LLM key for deterministic tests. Prompt material redacts supported key shapes; source import separately refuses high-confidence signatures defined in `config/secret-patterns.json`.
 
 ## 11. Repository map
 

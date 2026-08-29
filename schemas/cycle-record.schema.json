@@ -1,11 +1,22 @@
 {
   "$schema":"https://json-schema.org/draft/2020-12/schema",
   "type":"object",
-  "required":["schemaVersion","cycleId","startedAt","finishedAt","tier","startCommit","endCommit","attempts","outcome","reason","durationSec","filesChanged","dyad"],
+  "required":["schemaVersion","cycleId","startedAt","finishedAt","tier","startCommit","endCommit","initialSignature","finalSignature","signatureHistory","attemptHistory","attempts","outcome","reason","durationSec","harnessDurationSec","invocationWaitSec","filesChanged","attemptedPaths","discardedFailureIds","dyad"],
   "properties":{
     "schemaVersion":{"const":1},
     "tier":{"enum":[0,1]},
     "attempts":{"type":"integer","minimum":0},
-    "outcome":{"enum":["green","escalated_safety","escalated_signature_budget","escalated_total_budget","escalated_oscillation","escalated_no_progress","escalated_timeout","invocation_timeout","inconclusive_flaky","precondition_failed"]}
+    "initialSignature":{"type":["string","null"]},
+    "finalSignature":{"type":["string","null"]},
+    "signatureHistory":{"type":"array","items":{"type":["string","null"]}},
+    "attemptHistory":{"type":"array","items":{"type":"object"}},
+    "outcome":{"enum":["green","escalated_safety","escalated_signature_budget","escalated_total_budget","escalated_oscillation","escalated_no_progress","escalated_timeout","invocation_timeout","inconclusive_flaky","precondition_failed"]},
+    "durationSec":{"type":"number","minimum":0},
+    "harnessDurationSec":{"type":"number","minimum":0},
+    "invocationWaitSec":{"type":"number","minimum":0},
+    "filesChanged":{"type":"array","items":{"type":"string"}},
+    "attemptedPaths":{"type":"array","items":{"type":"string"}},
+    "discardedFailureIds":{"type":"array","items":{"type":"string"}},
+    "dyad":{"type":"object"}
   }
 }
