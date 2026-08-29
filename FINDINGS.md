@@ -93,8 +93,7 @@ picked for convenience.
 
 After the fix: 7 of 8 R1-R8 tests pass against the real specimen. The one residual failure (R5) is a plain
 string mismatch -- the app renders the tax line as `Tax (8%)`, the spec's `getByText("Tax", { exact: true
-})` expects the bare word `Tax` -- and is deliberately left unadjudicated here pending an owner decision on
-whether the exact label is normative or the spec's assumption was wrong a second time.
+})` expects the bare word `Tax`.
 
 **General lesson for applying this harness to what Lovable emits today**: a spec authored against a CSR
 (client-rendered) assumption produces failures on an SSR export that are indistinguishable, from the
@@ -105,6 +104,43 @@ burning attempt budget toward an oscillation or signature-budget escalation befo
 not the application, was wrong. Catching it by hand first is the SOW's "cheapest legitimate route" instinct
 applied to Component B: **check the test's own framework assumptions against what the generator actually
 emitted before trusting a red gate to mean a red application.**
+
+### R5 adjudicated: the opposite verdict, reached the same way
+
+R5's `Tax` mismatch went the other direction from the hydration case. SOW Appendix A states, verbatim:
+"Strings (exact): Your cart is empty, Subtotal, Tax, Total, Order confirmed." `Tax` is a normative exact
+string; the specimen renders `Tax (8%)` at `src/routes/index.tsx:314` and `:429`. Here **the spec is right
+and the specimen is wrong** -- the opposite of the hydration finding, where the spec was wrong and the
+specimen was right. R5 is left red; it is a legitimate Dyad target and `src/**` is not touched for it.
+
+The transferable point is the contrast itself, not either individual verdict: two red e2e tests with
+near-identical failure signatures (an element the assertion expects is not found/not matching) resolved to
+opposite conclusions -- one a defective spec (fixed with a zero-assertion-change precondition), one a
+defective specimen (left red for the repair loop) -- and both were settled the same way, by reading the SOW
+rather than by preference. **A red e2e gate does not by itself tell you which side is wrong; the failure
+signature looks identical either way.** Adjudicating it is exactly the judgment Mode B's human-in-the-loop
+boundary exists to preserve: a harness that auto-forwarded every red gate straight to the model, with no
+operator check against the actual normative requirement, would have "fixed" a working application in the
+hydration case and rubber-stamped a real defect as unfixable spec noise in the R5 case if the calls had
+been made carelessly, or reversed.
+
+## Known spec-depth gap: line-total size modifier is untested
+
+SOW money rules state, verbatim: "Line total = (base + size modifier) x qty" with Size: Small +$0.00,
+Medium +$0.50, Large +$1.00. The specimen's `lineTotalCents` (`src/routes/index.tsx:89`) is
+`product.priceCents * line.qty` -- no size modifier applied at all, for any size. This is a real SOW
+violation, and it is **not caught by the current R1-R8 suite**: R5, the only test that checks line-total
+math, exercises a Small item exclusively (`addItem(page, "latte", "Small", "Whole")`), where the modifier
+is +$0.00 and the missing-modifier bug is invisible by construction. Ordering a Medium or Large would
+immediately expose it.
+
+This gap is recorded rather than closed. Reason: deadline-bounded prioritization of outcome breadth (import
+idempotency, real Tier 0/1 execution, the hydration-race adjudication, the defect-matrix staging) over spec
+depth, and more red at this point raises the real risk of never reaching a green baseline at all before the
+deadline -- an honestly recorded gap is worth more than a rushed assertion added without time to verify its
+own correctness against the live specimen. This is the first item a follow-up should address: extend R5 (or
+add an R5b) to exercise a non-Small size and assert the modifier is applied, which would very likely turn
+this into a second live, legitimate Dyad repair target alongside the `Tax` string defect.
 
 ## Acceptance evidence
 

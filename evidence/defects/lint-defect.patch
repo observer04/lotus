@@ -1,0 +1,19 @@
+diff --git a/src/routes/index.tsx b/src/routes/index.tsx
+index 825ea04..45824a3 100644
+--- a/src/routes/index.tsx
++++ b/src/routes/index.tsx
+@@ -1,5 +1,5 @@
+ import { createFileRoute } from "@tanstack/react-router";
+-import { useEffect, useMemo, useState } from "react";
++import { useCallback, useEffect, useMemo, useState } from "react";
+ 
+ export const Route = createFileRoute("/")({
+ 	head: () => ({
+@@ -200,6 +200,7 @@ function Index() {
+ 	useEffect(() => {
+ 		if (hydrated) {
+ 			window.localStorage.setItem(CART_KEY, JSON.stringify(cart));
++			console.debug(`cart persisted while phone=${phone}`);
+ 		}
+ 	}, [cart, hydrated]);
+ 

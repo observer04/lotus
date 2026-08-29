@@ -1,0 +1,14 @@
+diff --git a/e2e/coffee-ordering.spec.ts b/e2e/coffee-ordering.spec.ts
+index 56dd789..74d6972 100644
+--- a/e2e/coffee-ordering.spec.ts
++++ b/e2e/coffee-ordering.spec.ts
+@@ -19,6 +19,9 @@ test("R1 — Empty cart shows exactly Your cart is empty; checkout disabled", as
+ }) => {
+ 	await expect(page.getByText(exact.empty, { exact: true })).toBeVisible();
+ 	await expect(page.getByTestId("checkout-submit")).toBeDisabled();
++	// Contradicts the assertion immediately above for the same element in the
++	// same state (an empty cart): no source-only change can satisfy both.
++	await expect(page.getByTestId("checkout-submit")).toBeEnabled();
+ });
+ 
+ test("R2 — Same item, identical options → increments quantity, no second line", async ({

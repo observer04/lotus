@@ -1,0 +1,13 @@
+diff --git a/src/routes/index.tsx b/src/routes/index.tsx
+index 825ea04..7f44b8d 100644
+--- a/src/routes/index.tsx
++++ b/src/routes/index.tsx
+@@ -83,7 +83,7 @@ const CART_KEY = "coffee-cart-v1";
+ const TAX_RATE_NUMERATOR = 8;
+ 
+ function formatCents(cents: number): string {
+-	return (cents / 100).toFixed(2);
++	return (cents / 100).toFixed(1);
+ }
+ 
+ function lineTotalCents(line: CartLine): number {

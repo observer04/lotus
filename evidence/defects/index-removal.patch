@@ -1,0 +1,25 @@
+diff --git a/src/routes/index.tsx b/src/routes/index.tsx
+index 825ea04..994506a 100644
+--- a/src/routes/index.tsx
++++ b/src/routes/index.tsx
+@@ -230,6 +230,11 @@ function Index() {
+ 		});
+ 	};
+ 
++	// Group same-product lines together for a tidier display order.
++	const displayCart = [...cart].sort((a, b) =>
++		a.productId.localeCompare(b.productId),
++	);
++
+ 	// All money math in integer cents.
+ 	const subtotalCents = useMemo(
+ 		() => cart.reduce((sum, line) => sum + lineTotalCents(line), 0),
+@@ -371,7 +376,7 @@ function Index() {
+ 							</p>
+ 						) : (
+ 							<ul className="mt-4 divide-y divide-border">
+-								{cart.map((line, i) => {
++								{displayCart.map((line, i) => {
+ 									const product = PRODUCTS.find(
+ 										(p) => p.id === line.productId,
+ 									)!;

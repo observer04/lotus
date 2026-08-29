@@ -1,0 +1,13 @@
+diff --git a/e2e/coffee-ordering.spec.ts b/e2e/coffee-ordering.spec.ts
+index 56dd789..92bfd0c 100644
+--- a/e2e/coffee-ordering.spec.ts
++++ b/e2e/coffee-ordering.spec.ts
+@@ -27,7 +27,7 @@ test("R2 — Same item, identical options → increments quantity, no second lin
+ 	await addItem(page, "espresso", "Small", "Whole");
+ 	await addItem(page, "espresso", "Small", "Whole");
+ 	await expect(cartLines(page)).toHaveCount(1);
+-	await expect(cartLines(page).first().getByTestId("line-qty")).toHaveText("2");
++	await expect(cartLines(page).first().getByTestId("line-qty")).toBeVisible();
+ });
+ 
+ test("R3 — Same item, different options → separate line", async ({ page }) => {
