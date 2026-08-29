@@ -44,7 +44,7 @@ function countBiome(text){
   }catch{return text.trim()?1:0;}
 }
 
-export function buildImportReport(root,capabilities,{unownedGlobs=[]}={}){
+export function buildImportReport(root,capabilities,{unownedGlobs=[],lockfileReconciliation=null}={}){
   const floats=locations(root,/\b(?:price|total|subtotal|tax|amount|cost)\b.*\.toFixed\s*\(|\.toFixed\s*\([^)]*\).*\b(?:price|total|subtotal|tax|amount|cost)\b/i,unownedGlobs);
   const missingTestIds=[];
   for(const rel of ownedFiles(root,unownedGlobs)){
@@ -71,6 +71,7 @@ export function buildImportReport(root,capabilities,{unownedGlobs=[]}={}){
 
   const lines=[
     "# Lovable Import Report","",
+    ...(lockfileReconciliation?[`Lockfile reconciliation: source ${lockfileReconciliation.sourcePasses} pass(es), normalized ${lockfileReconciliation.normalizedPasses} pass(es).`,""]:[]),
     "## Float currency math",`Status: ${floats.length?"review":"clear"}`,`Count: ${floats.length}`,"Evidence:",...(floats.length?floats.map(x=>`- ${x}`):["- none"]),"",
     "## data-testid coverage",`Status: ${missingTestIds.length?"review":"clear"}`,`Count: ${missingTestIds.length}`,"Evidence:",...(missingTestIds.length?missingTestIds.map(x=>`- ${x}`):["- none"]),"",
     "## Typecheck baseline",`Status: ${tsc.status===0?"clear":"debt"}`,`Count: ${tscErrors}`,"Evidence:",`- command exit: ${tsc.status}`,"",

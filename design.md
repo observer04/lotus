@@ -95,7 +95,7 @@ The IDs below are the source of truth for implementation and test names.
 - IMP-002: the target and source paths must differ, resolve below their expected roots, and be free of symlink escapes.
 - IMP-003: the target must be clean before the first import and before any re-import.
 - IMP-004: .git, node_modules, build output, local environment files, and source secrets are never copied.
-- IMP-005: a missing lockfile is generated before npm ci; npm ci is never attempted first when no lockfile exists.
+- IMP-005: a missing lockfile is generated before npm ci; npm ci is never attempted first when no lockfile exists. Generation is reconciled: `npm install --package-lock-only` can write a lockfile that its own `npm ci` then rejects as out of sync (observed on both genuine exports, caused by an optional-peer conflict npm's installer and its stricter ideal-tree check resolve differently), so generation repeats until `npm ci --dry-run` accepts the lock and the lock is byte-stable across two consecutive passes, capped at 5 passes. The pass count is recorded in import-report.md.
 - IMP-006: Node is pinned by .nvmrc and package.json engines from one version constant.
 - IMP-007: Biome is version-pinned and useExhaustiveDependencies is error severity.
 - IMP-008: a smoke fixture proves useExhaustiveDependencies actually fails; configuration presence alone is insufficient.

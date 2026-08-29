@@ -43,7 +43,7 @@ The importer:
 
 1. validates source/target paths and refuses symlinks;
 2. excludes `.env*`, scans for versioned high-confidence committed-secret patterns without printing values, and copies into a staging transaction;
-3. creates `package-lock.json` before `npm ci` when necessary;
+3. creates `package-lock.json` before `npm ci` when necessary, reconciling it across up to 5 generation passes until `npm ci --dry-run` accepts it and it is byte-stable (a known npm quirk: `npm install --package-lock-only` can write a lockfile that `npm ci` itself then rejects as out of sync, observed on both genuine exports) — the pass count is recorded in `import-report.md`;
 4. verifies the source install/build;
 5. pins Node, Biome and Playwright scaffolding;
 6. runs a non-fatal `biome check --write src e2e` so `baseline-v1` reflects deterministic formatting and import organization instead of raw generator output (residual errors are reported, not treated as an import failure);

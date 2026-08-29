@@ -12,6 +12,7 @@ import { assertHarness } from "./lib/schema.mjs";
 import { scanSecrets } from "./lib/secrets.mjs";
 import { provesExhaustiveDependencies } from "./lib/biome-proof.mjs";
 import { loadUnownedGlobs } from "./lib/ownership.mjs";
+import { reconcileLockfile } from "./lib/lockfile.mjs";
 import { explainPlaywrightInstallFailure } from "./lib/playwright.mjs";
 
 const ROOT=fs.realpathSync(process.cwd());
@@ -83,8 +84,10 @@ try{
   let caps=detectCapabilities(stage);
 
   // Validate the source's own install/build before harness normalization.
+  let sourceLockPasses=0;
   if(!fs.existsSync(path.join(stage,"package-lock.json"))){
-    requireOk(runSync(["npm","install","--package-lock-only","--ignore-scripts"],{cwd:stage,timeoutMs:180000}),"lockfile generation");
+    try{ sourceLockPasses=reconcileLockfile({cwd:stage,timeoutMs:180000}).passes; }
+    catch(error){ console.error(`lockfile generation failed\n${error.message}`); process.exit(1); }
     if(!fs.existsSync(path.join(stage,"package-lock.json"))) throw new Error("lockfile generation reported success but package-lock.json was not produced");
   }
   requireOk(runSync(["npm","ci"],{cwd:stage,timeoutMs:300000}),"npm ci (source)");
@@ -96,7 +99,9 @@ try{
   if(caps.hasTsconfig && !pkg.devDependencies.typescript && !(pkg.dependencies??{}).typescript) pkg.devDependencies.typescript="5.8.3";
   pkg.scripts={...(pkg.scripts??{}),"harness:standards":"bash scripts/scan-banned.sh","harness:lint":"biome ci src e2e --reporter=json","harness:typecheck":caps.hasTsconfig?(pkg.scripts?.typecheck??"tsc --noEmit"):"node -e \"process.exit(0)\"","harness:build":pkg.scripts.build,"harness:e2e":"playwright test --project=chromium","harness:gate":"bash scripts/gate.sh"};
   fs.writeFileSync(pkgPath,JSON.stringify(pkg,null,2)+"\n");
-  requireOk(runSync(["npm","install","--package-lock-only","--ignore-scripts"],{cwd:stage,timeoutMs:240000}),"lockfile normalization");
+  let normalizedLockPasses;
+  try{ normalizedLockPasses=reconcileLockfile({cwd:stage,timeoutMs:240000}).passes; }
+  catch(error){ console.error(`lockfile normalization failed\n${error.message}`); process.exit(1); }
   requireOk(runSync(["npm","ci"],{cwd:stage,timeoutMs:300000}),"npm ci (normalized)");
 
   for(const rel of HARNESS_FILES){ const src=path.join(ROOT,rel); if(fs.existsSync(src)){ const dst=path.join(stage,rel); if(fs.existsSync(dst)) fs.rmSync(dst,{recursive:true,force:true}); if(fs.statSync(src).isDirectory()) copyTree(src,dst); else {fs.mkdirSync(path.dirname(dst),{recursive:true});fs.copyFileSync(src,dst);} } }
@@ -123,7 +128,8 @@ try{
 
   requireOk(runSync(caps.commands.build,{cwd:stage,timeoutMs:180000}),"normalized build");
   const unownedGlobs=loadUnownedGlobs({cwd:stage});
-  const report=buildImportReport(stage,{...caps,commands:harness.commands},{unownedGlobs}); fs.writeFileSync(path.join(stage,"import-report.md"),report.markdown);
+  const lockfileReconciliation={sourcePasses:sourceLockPasses,normalizedPasses:normalizedLockPasses};
+  const report=buildImportReport(stage,{...caps,commands:harness.commands},{unownedGlobs,lockfileReconciliation}); fs.writeFileSync(path.join(stage,"import-report.md"),report.markdown);
 
   if(process.env.HARNESS_SKIP_BROWSER_INSTALL!=="1"){
     const install=runSync(["npx","--no-install","playwright","install","chromium"],{cwd:stage,timeoutMs:300000});
