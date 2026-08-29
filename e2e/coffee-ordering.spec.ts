@@ -1,10 +1,17 @@
 import { expect, test } from "@playwright/test";
-import { addItem, cartLines, exact, expectMoney } from "./fixtures";
+import {
+	addItem,
+	cartLines,
+	exact,
+	expectMoney,
+	waitForHydration,
+} from "./fixtures";
 
 test.beforeEach(async ({ page }) => {
 	await page.goto("/");
 	await page.evaluate(() => localStorage.removeItem("coffee-cart-v1"));
 	await page.reload();
+	await waitForHydration(page);
 });
 
 test("R1 — Empty cart shows exactly Your cart is empty; checkout disabled", async ({
@@ -93,6 +100,7 @@ test("R8 — Cart survives a page reload, including options and quantities", asy
 	);
 	expect(stored).not.toBeNull();
 	await page.reload();
+	await waitForHydration(page);
 	await expect(cartLines(page)).toHaveCount(1);
 	await expect(cartLines(page).first()).toContainText("Large");
 	await expect(cartLines(page).first()).toContainText("Oat");

@@ -32,6 +32,22 @@ export function cartLines(page: Page) {
 	return page.getByTestId("cart-line");
 }
 
+export async function waitForHydration(page: Page) {
+	// This page is server-rendered (TanStack Start): every data-testid is
+	// already present in the SSR HTML before React attaches event handlers, so
+	// Playwright's actionability checks pass on a click that lands before
+	// hydration -- and even a click that beats hydration gets clobbered when
+	// the mount effect runs setCart(loadCart()). Waiting for that same effect's
+	// localStorage write is a precise client-mount gate, not an incidental
+	// implementation detail: coffee-cart-v1 is the SOW's own normative storage
+	// key (R8), not a stand-in selector.
+	await page.waitForFunction(
+		() => window.localStorage.getItem("coffee-cart-v1") !== null,
+		undefined,
+		{ timeout: 5000 },
+	);
+}
+
 export async function expectMoney(
 	page: Page,
 	subtotal: string,
