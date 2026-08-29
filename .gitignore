@@ -12,3 +12,4 @@ test-results/
 .DS_Store
 gate-report.json
 .gate-report.*.tmp
+.claude/
