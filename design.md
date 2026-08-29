@@ -373,6 +373,8 @@ gate.sh invokes gate-report.mjs, which owns the stage pipeline and atomic report
 
 Playwright uses a JSON output file inside the run directory. Traces are retained only for confirmed failures. The harness performs its own single confirmation rerun, so Playwright's normal retry count remains zero.
 
+Biome 1.9.4's JSON reporter does not match the shape an earlier draft assumed, confirmed against the real coffee specimen: `message` is an array of rich-text spans (`[{elements,content}]`, never a plain string), the flat human-readable text lives in `description`, and `location.span` is a two-element array of UTF-8 **byte** offsets into `location.sourceCode` rather than a `{start:{line,column}}` object. The parser flattens `message`/`description` to plain text and converts the byte offset to a 1-based line/column through a `Buffer`, never a direct JS string index — a character-index slice silently shifts every line after the first multi-byte character. Getting this wrong does not fail loudly: line/column both become null, so PRM-004's ±15-line source context is silently omitted for the entire lint gate rather than erroring.
+
 ### 8.2 Stable failure identity
 
 A diagnostic is normalized as:

@@ -43,18 +43,43 @@ export function parseTsc(text, root = process.cwd()) {
   return failures;
 }
 
+// Biome 1.9.4's JSON reporter emits `message` as an array of rich-text spans
+// (`[{elements,content}]`), not a plain string; the flat human-readable text
+// is `description`. `location.span` is a two-element array of UTF-8 BYTE
+// offsets into `location.sourceCode`, not an object -- converting it through
+// a JS string index (rather than a Buffer) would silently shift every line
+// after the first multi-byte character. Older/object-shaped fixtures
+// (`span.start.line`) are preserved as a fallback.
+function flattenBiomeMessage(d) {
+  if (typeof d.description === "string" && d.description.trim()) return d.description;
+  if (typeof d.message === "string") return d.message;
+  if (Array.isArray(d.message)) return d.message.map(part => part?.content ?? "").join("");
+  return "";
+}
+
+function biomeSpanLocation(loc) {
+  const span = loc.span;
+  if (Array.isArray(span) && typeof span[0] === "number" && typeof loc.sourceCode === "string") {
+    const prefix = Buffer.from(loc.sourceCode, "utf8").subarray(0, span[0]).toString("utf8");
+    const lastNewline = prefix.lastIndexOf("\n");
+    return { line: prefix.split("\n").length, column: prefix.length - lastNewline };
+  }
+  const objSpan = span && typeof span === "object" ? span : {};
+  return { line: objSpan.start?.line ?? loc.line ?? null, column: objSpan.start?.column ?? loc.column ?? null };
+}
+
 export function parseBiome(text, root = process.cwd()) {
   const parsed=parseJsonEnvelope(text);
   if(!parsed) return text.trim() ? [makeFailure({gate:"lint", rule:"BIOME_EXIT", message:text.trim().slice(0,1000)}, root)] : [];
   const diagnostics = parsed.diagnostics ?? parsed.summary?.diagnostics ?? [];
   return diagnostics.map(d => {
     const loc = d.location ?? {};
-    const span = loc.span ?? {};
     const file = loc.path?.file ?? loc.path ?? d.filePath ?? "";
     const category = String(d.category ?? d.rule ?? "BIOME");
     const rule = category.replace(/^lint\//,"");
-    const message = typeof d.message === "string" ? d.message : JSON.stringify(d.message ?? "");
-    return makeFailure({ gate:"lint", file, line: span.start?.line ?? loc.line ?? null, column: span.start?.column ?? loc.column ?? null, rule, message }, root);
+    const message = flattenBiomeMessage(d);
+    const { line, column } = biomeSpanLocation(loc);
+    return makeFailure({ gate:"lint", file, line, column, rule, message }, root);
   });
 }
 

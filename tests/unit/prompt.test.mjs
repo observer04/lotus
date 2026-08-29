@@ -65,3 +65,13 @@ test("GATE-011 unowned source never yields a RELEVANT SOURCE block and constrain
   assert.doesNotMatch(text,/RELEVANT SOURCE/);
   assert.ok(text.includes("src/**/*.gen.ts"),"constraints must name the unowned globs");
 });
+
+test("PRM-004 a lint failure with a real line under a writable glob must produce a RELEVANT SOURCE block",()=>{
+  const root=tempDir(); fs.mkdirSync(path.join(root,"src/routes"),{recursive:true});
+  fs.writeFileSync(path.join(root,"src/routes/index.tsx"),Array.from({length:20},(_,i)=>`line ${i+1}`).join("\n"));
+  const f=makeFailure({gate:"lint",file:"src/routes/index.tsx",line:10,column:3,rule:"style/noNonNullAssertion",message:"Forbidden non-null assertion."},root);
+  const r={...report(root,[f]),tier:0,gates:[{gate:"lint",status:"failed",durationMs:1,failures:[f]}]};
+  const text=buildPrompt(r,{cwd:root});
+  assert.match(text,/## RELEVANT SOURCE/);
+  assert.match(text,/src\/routes\/index\.tsx:10/);
+});
