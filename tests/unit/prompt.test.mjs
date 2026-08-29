@@ -55,3 +55,13 @@ test("PRM-004 source context follows configured writable roots instead of hardco
   assert.match(text,/app\/main\.ts:2/);
   assert.match(text,/const broken/);
 });
+
+test("GATE-011 unowned source never yields a RELEVANT SOURCE block and constraints name the unowned globs",()=>{
+  const root=tempDir(); fs.mkdirSync(path.join(root,"src"),{recursive:true});
+  fs.writeFileSync(path.join(root,"src/routeTree.gen.ts"),Array.from({length:10},(_,i)=>`line ${i+1}`).join("\n"));
+  const f=makeFailure({gate:"standards",file:"src/routeTree.gen.ts",line:3,rule:"AS_ANY",message:"banned pattern"},root);
+  const r={...report(root,[f]),tier:0,gates:[{gate:"standards",status:"failed",durationMs:1,failures:[f]}]};
+  const text=buildPrompt(r,{cwd:root,unownedGlobs:["src/**/*.gen.ts"]});
+  assert.doesNotMatch(text,/RELEVANT SOURCE/);
+  assert.ok(text.includes("src/**/*.gen.ts"),"constraints must name the unowned globs");
+});

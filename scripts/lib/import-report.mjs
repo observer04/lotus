@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { scanBanned } from "./scan.mjs";
 import { runSync } from "./process.mjs";
+import { matchesAny } from "./ownership.mjs";
 
 const SOURCE_EXT=/\.(?:js|jsx|ts|tsx)$/;
 
@@ -16,9 +17,16 @@ function walk(dir,root,out=[]){
   return out;
 }
 
-function locations(root,re){
+// data-testid coverage and float-currency math are behavioral checks against
+// the application; unowned (generator-owned/vendored) files are out of scope
+// for them but still surface under Banned patterns below.
+function ownedFiles(root,unownedGlobs){
+  return walk(path.join(root,"src"),root).filter(rel=>!matchesAny(rel,unownedGlobs));
+}
+
+function locations(root,re,unownedGlobs){
   const out=[];
-  for(const rel of walk(path.join(root,"src"),root)){
+  for(const rel of ownedFiles(root,unownedGlobs)){
     const lines=fs.readFileSync(path.join(root,rel),"utf8").split(/\r?\n/);
     for(let i=0;i<lines.length;i++){
       re.lastIndex=0;
@@ -36,10 +44,10 @@ function countBiome(text){
   }catch{return text.trim()?1:0;}
 }
 
-export function buildImportReport(root,capabilities){
-  const floats=locations(root,/\b(?:price|total|subtotal|tax|amount|cost)\b.*\.toFixed\s*\(|\.toFixed\s*\([^)]*\).*\b(?:price|total|subtotal|tax|amount|cost)\b/i);
+export function buildImportReport(root,capabilities,{unownedGlobs=[]}={}){
+  const floats=locations(root,/\b(?:price|total|subtotal|tax|amount|cost)\b.*\.toFixed\s*\(|\.toFixed\s*\([^)]*\).*\b(?:price|total|subtotal|tax|amount|cost)\b/i,unownedGlobs);
   const missingTestIds=[];
-  for(const rel of walk(path.join(root,"src"),root)){
+  for(const rel of ownedFiles(root,unownedGlobs)){
     const lines=fs.readFileSync(path.join(root,rel),"utf8").split(/\r?\n/);
     for(let i=0;i<lines.length;i++){
       if(/<(button|input|select|textarea|a)\b/i.test(lines[i])&&!/data-testid\s*=/.test(lines[i])) missingTestIds.push(`${rel}:${i+1}`);
@@ -48,6 +56,9 @@ export function buildImportReport(root,capabilities){
 
   const tsc=runSync(capabilities.commands.typecheck,{cwd:root,timeoutMs:120000});
   const lint=runSync(capabilities.commands.lint,{cwd:root,timeoutMs:120000});
+  // Deliberately unfiltered: generator-owned/vendored findings still belong in
+  // the report ("what the generator got wrong"), even though the standards
+  // gate and the fixer prompt never see them.
   const banned=scanBanned({cwd:root});
   const pkg=JSON.parse(fs.readFileSync(path.join(root,"package.json"),"utf8"));
   const policy=JSON.parse(fs.readFileSync(path.join(root,"config","platform-dependencies.json"),"utf8"));

@@ -35,3 +35,15 @@ test("GATE-004 fail-fast records later stages as not_run",()=>{
 test("GATE-001 invalid tier exits precondition code",()=>{
   const root=setup(); const r=run(["bash","scripts/gate.sh","9"],{cwd:root,allowFailure:true}); assert.equal(r.status,2);
 });
+
+test("GATE-011 tier 0 standards ignores generator-owned unowned paths",()=>{
+  const root=setup();
+  fs.mkdirSync(path.join(root,"src/components/ui"),{recursive:true});
+  fs.writeFileSync(path.join(root,"src/routeTree.gen.ts"),"export const routeTree = {} as any;\n");
+  fs.writeFileSync(path.join(root,"src/components/ui/button.tsx"),"const casted = props as any;\n");
+  commitAll(root,"add generator-owned files");
+  const r=run(["bash","scripts/gate.sh","0"],{cwd:root,allowFailure:true}); assert.equal(r.status,0,r.stderr);
+  const report=readJson(path.join(root,"gate-report.json"));
+  assert.equal(report.gates[0].gate,"standards");
+  assert.equal(report.gates[0].status,"passed");
+});

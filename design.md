@@ -99,7 +99,7 @@ The IDs below are the source of truth for implementation and test names.
 - IMP-006: Node is pinned by .nvmrc and package.json engines from one version constant.
 - IMP-007: Biome is version-pinned and useExhaustiveDependencies is error severity.
 - IMP-008: a smoke fixture proves useExhaustiveDependencies actually fails; configuration presence alone is insufficient.
-- IMP-009: Playwright is version-pinned and installs Chromium only.
+- IMP-009: Playwright is version-pinned and installs Chromium only. A browser-install refusal on an unrecognized host is explained to the operator with the exact remediation environment variable; the importer never sets it silently, so an unsupported machine fails loudly rather than pretending to be supported.
 - IMP-010: harness.json and all required scaffolding are produced deterministically.
 - IMP-011: import-report.md contains all six SOW checks, each with status, count, and evidence.
 - IMP-012: baseline-v1 is created only after normalization and is never moved automatically.
@@ -107,6 +107,8 @@ The IDs below are the source of truth for implementation and test names.
 - IMP-014: a clean clone passes npm ci and npm run build.
 - IMP-015: two distinct Lovable exports pass the same importer without script modification.
 - IMP-016: before copying, the importer scans text files for the versioned high-confidence secret patterns in config/secret-patterns.json; a finding refuses import while reporting only pattern ID, relative path, and line.
+- IMP-017: after harness files land in staging and before the useExhaustiveDependencies smoke fixture, the importer runs a non-fatal `biome check --write` over src and e2e so baseline-v1 reflects deterministic formatting and import organization rather than raw generator output; residual errors are genuine findings, not import failures.
+- IMP-018: the importer detects and records generator-owned/vendored paths (config/unowned-paths.json, optionally extended per project by harness.json's `unownedGlobs`) so a reusable import never assumes `src/**` is entirely application code; biome.json's `files.ignore` is a superset of the same policy globs (single-source guard).
 
 ### 4.2 Gate requirements
 
@@ -120,6 +122,7 @@ The IDs below are the source of truth for implementation and test names.
 - GATE-008: the banned scan examines filesystem content under src, e2e, and scripts. Code-like rules ignore prose in comments and string literals; directive rules match actual directive comment forms. The prompt renderer is the sole explicit path exclusion because it must quote the prohibited tokens.
 - GATE-009: a first-red e2e failure is rerun once by failing test ID before it can enter a fix loop.
 - GATE-010: a non-reproducible e2e failure is inconclusive and is never sent to Dyad.
+- GATE-011: unowned ⇒ unscanned ⇒ unwritable. A path excluded from the standards scan and the lint gate (config/unowned-paths.json, merged with harness.json's `unownedGlobs`) is also denied by Git verification, across the full commit range and the worktree. Exclusion can never become a hiding place for a fixer's edit, and the prompt packet never offers unowned files as editable source context.
 
 ### 4.3 Prompt requirements
 
@@ -128,7 +131,7 @@ The IDs below are the source of truth for implementation and test names.
 - PRM-003: the packet contains the first 20 failures and marks truncation.
 - PRM-004: source context is limited to 15 lines before and after a writable source location.
 - PRM-005: prior attempts on the current signature are included without model secrets or full conversation history.
-- PRM-006: constraints name protected paths, banned patterns, the writable allowlist, and the prohibition on weakening assertions or reducing assertion count.
+- PRM-006: constraints name protected paths, banned patterns, the writable allowlist, generator-owned/vendored (unowned) paths excluded even from that allowlist, and the prohibition on weakening assertions or reducing assertion count.
 - PRM-007: the complete packet has a configurable byte ceiling and records any truncation.
 
 ### 4.4 Cycle requirements
@@ -216,6 +219,7 @@ The only manual Mode B action is invoking Dyad with the generated packet and app
 ├── config/
 │   ├── banned-patterns.json
 │   ├── secret-patterns.json
+│   ├── unowned-paths.json
 │   └── platform-dependencies.json
 ├── schemas/
 │   ├── harness.schema.json
@@ -234,6 +238,8 @@ The only manual Mode B action is invoking Dyad with the generated packet and app
 │       ├── diagnostics.mjs
 │       ├── git-state.mjs
 │       ├── invocation.mjs
+│       ├── ownership.mjs
+│       ├── playwright.mjs
 │       ├── prompt.mjs
 │       ├── secrets.mjs
 │       ├── schema.mjs
@@ -294,7 +300,9 @@ package.json scripts are normalized without replacing existing application comma
 
 Command selection is capability-driven. The detector records why each command was chosen. It must not assume Vite merely because the source came from Lovable.
 
-`harness.json` schema version 1 requires `harnessVersion`, `source.kind`, `source.identity`, `nodeVersion`, argv-array commands for build/dev/typecheck/lint, and at least one `writableGlobs` entry. Import-generated records additionally contain `importedAt`, detected `framework`, the e2e argv, optional resolved Git commit, and the local server-ready timeout.
+`harness.json` schema version 1 requires `harnessVersion`, `source.kind`, `source.identity`, `nodeVersion`, argv-array commands for build/dev/typecheck/lint, and at least one `writableGlobs` entry. Import-generated records additionally contain `importedAt`, detected `framework`, the e2e argv, optional resolved Git commit, and the local server-ready timeout. `unownedGlobs` is optional and additive to `config/unowned-paths.json` (§7.6).
+
+After harness files land in staging and before the useExhaustiveDependencies smoke fixture (§7.4), the importer runs `biome check --write src e2e` (IMP-017). This is non-fatal — a nonzero exit is expected whenever residual, non-auto-fixable errors remain — and applies only formatting, import organization, and Biome's safe fixes. It never invents a green baseline; the normalized build re-verification after it aborts the import loudly if normalization broke anything.
 
 ### 7.3 Secret boundary
 
@@ -334,6 +342,20 @@ import-report.md always has these six sections:
 | Dependencies outside platform list | package name, requested range, dependency class, and review status. |
 
 The platform list is versioned in config/platform-dependencies.json. Unknown packages are report findings in the MVP, not automatically deleted or upgraded. The list must contain the separately reviewed specimen and harness dependencies before the acceptance baseline is approved.
+
+Banned-pattern findings inside unowned paths (§7.6) are deliberately still listed here — the import report exists to identify what the generator got wrong, even for files the harness will never ask a fixer to touch. Only the data-testid and float-currency checks skip unowned paths, because those are behavioral checks against application code the generator does not own.
+
+### 7.6 Ownership boundary
+
+Modern Lovable exports are not entirely application code: TanStack Router emits a generated `*.gen.ts`/`*.gen.tsx` route tree, and shadcn/ui components are vendored verbatim under `src/components/ui/**`. Treating all of `src/**` as writable application code would let a fixer edit a file the generator overwrites on its next run, and would make the banned-pattern scanner flag generator output as if it were a product defect.
+
+`config/unowned-paths.json` versions the default policy (each glob carries a `reason`); `harness.json`'s optional `unownedGlobs` extends it per project. `scripts/lib/ownership.mjs` compiles Unix shell globs (`**`, `*`, `?`) to RegExp and exposes `matchesAny`/`loadUnownedGlobs`. The same merged list is applied in three independent places, per GATE-011:
+
+1. The standards scan (`scanBanned`) skips unowned paths, so generator output never appears as a gate failure.
+2. `verifyProtected` denies any changed or untracked unowned path — across the full commit range and the current worktree — even though it lives under a writable glob like `src/**`. This is what stops the exclusion from becoming a hiding place: a fixer cannot achieve green by quietly editing (or introducing) a file the standards scan no longer looks at.
+3. The prompt packet never renders source context from an unowned file and names the unowned globs in CONSTRAINTS, so a fixer is told not to bother.
+
+`biome.json`'s `files.ignore` is a single-source guard: it must always be a superset of `config/unowned-paths.json`'s globs (plus `**/*.css`, since Biome 1.9's CSS linter/formatter cannot parse Tailwind 4's `@import "tailwindcss" source(none)` syntax and is disabled entirely rather than patched per project).
 
 ## 8. Component B design
 
@@ -725,11 +747,13 @@ The smoke result proves the Dyad integration path only. It does not replace the 
 | Six-check import report | IMP-011 | Report snapshot and schema tests |
 | Node, lockfile, Biome, Playwright normalization | IMP-005–IMP-010 | Clean-clone and live-rule tests |
 | baseline-v1 | IMP-012 | Git integration assertion |
+| Deterministic pre-baseline formatting; reusable across generator layouts | IMP-017–IMP-018 | Extended importer fixture with generated/vendored/Tailwind-4 content |
 | Tier 0 and Tier 1 gates | GATE-001–GATE-005 | Gate pipeline tests |
 | One e2e test per R1–R8 | SPEC-R1–SPEC-R8 | Playwright suite |
 | Structured gate report and signature | GATE-005–GATE-007 | Schema, parser, hash-invariance tests |
 | Banned scan across required roots | GATE-008 | Syntax/prose and script-tamper scanner tests |
 | E2E confirmation and flake boundary | GATE-009–GATE-010 | Reproducing, disappearing, and zero-selection integration cases |
+| Unowned ⇒ unscanned ⇒ unwritable invariant | GATE-011 | Scanner, protection, prompt, and gate integration tests on generated/vendored paths |
 | Failure packet | PRM-001–PRM-007 | Golden prompt tests |
 | Bounded loop | CYC-001–CYC-013 | Fake-fixer state-machine tests |
 | Protected and banned verification | CYC-006–CYC-008, CYC-017 | Tamper acceptance test |

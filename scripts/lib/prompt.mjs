@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { pathIsWritable } from "./protection.mjs";
+import { matchesAny } from "./ownership.mjs";
 
 export function redact(text) {
   let out=String(text);
@@ -29,8 +30,8 @@ function sourceFiles(cwd,writableGlobs=["src/**"]){
   return out.sort();
 }
 
-function renderContext(cwd,file,line,radius=15,label=null,writableGlobs=["src/**"]){
-  if(!file||!pathIsWritable(file,writableGlobs)||!line) return null;
+function renderContext(cwd,file,line,radius=15,label=null,writableGlobs=["src/**"],unownedGlobs=[]){
+  if(!file||!pathIsWritable(file,writableGlobs)||matchesAny(file,unownedGlobs)||!line) return null;
   const abs=path.join(cwd,file);
   if(!fs.existsSync(abs)) return null;
   const lines=fs.readFileSync(abs,"utf8").split(/\r?\n/);
@@ -39,11 +40,11 @@ function renderContext(cwd,file,line,radius=15,label=null,writableGlobs=["src/**
   return `### ${label??`${file}:${line}`}\n\`\`\`\n${body}\n\`\`\``;
 }
 
-function clipContext(cwd,failure,radius=15,writableGlobs=["src/**"]){
-  return renderContext(cwd,failure.file,failure.line,radius,null,writableGlobs);
+function clipContext(cwd,failure,radius=15,writableGlobs=["src/**"],unownedGlobs=[]){
+  return renderContext(cwd,failure.file,failure.line,radius,null,writableGlobs,unownedGlobs);
 }
 
-function e2eSourceCandidates(cwd,failure,radius=15,writableGlobs=["src/**"]){
+function e2eSourceCandidates(cwd,failure,radius=15,writableGlobs=["src/**"],unownedGlobs=[]){
   if(failure.gate!=="e2e" || !failure.file) return [];
   const testAbs=path.join(cwd,failure.file);
   if(!fs.existsSync(testAbs)) return [];
@@ -55,11 +56,12 @@ function e2eSourceCandidates(cwd,failure,radius=15,writableGlobs=["src/**"]){
   const contexts=[];
   for(const id of unique){
     for(const abs of sourceFiles(cwd,writableGlobs)){
+      const rel=path.relative(cwd,abs).split(path.sep).join("/");
+      if(matchesAny(rel,unownedGlobs)) continue;
       const lines=fs.readFileSync(abs,"utf8").split(/\r?\n/);
       for(let i=0;i<lines.length;i++){
         if(!lines[i].includes(id)) continue;
-        const rel=path.relative(cwd,abs).split(path.sep).join("/");
-        const rendered=renderContext(cwd,rel,i+1,radius,`${rel}:${i+1} (candidate for data-testid=${id})`,writableGlobs);
+        const rendered=renderContext(cwd,rel,i+1,radius,`${rel}:${i+1} (candidate for data-testid=${id})`,writableGlobs,unownedGlobs);
         if(rendered) contexts.push(rendered);
         if(contexts.length>=3) return contexts;
       }
@@ -80,7 +82,7 @@ function truncateUtf8(text,byteCeiling){
   return text.slice(0,lo)+marker;
 }
 
-export function buildPrompt(report,{cycle=1,maxAttempts=6,attempt=1,priorAttempts=[],cwd=process.cwd(),maxFailures=20,byteCeiling=48*1024,writableGlobs=["src/**"]}={}){
+export function buildPrompt(report,{cycle=1,maxAttempts=6,attempt=1,priorAttempts=[],cwd=process.cwd(),maxFailures=20,byteCeiling=48*1024,writableGlobs=["src/**"],unownedGlobs=[]}={}){
   const failures=report.gates.flatMap(g=>g.failures??[]).sort((a,b)=>`${a.gate}/${a.file}/${a.rule}`.localeCompare(`${b.gate}/${b.file}/${b.rule}`));
   const selected=failures.slice(0,maxFailures);
   const lines=[
@@ -96,8 +98,8 @@ export function buildPrompt(report,{cycle=1,maxAttempts=6,attempt=1,priorAttempt
   const contexts=[];
   const seen=new Set();
   for(const failure of selected){
-    const direct=clipContext(cwd,failure,15,writableGlobs);
-    for(const c of [direct,...e2eSourceCandidates(cwd,failure,15,writableGlobs)].filter(Boolean)){
+    const direct=clipContext(cwd,failure,15,writableGlobs,unownedGlobs);
+    for(const c of [direct,...e2eSourceCandidates(cwd,failure,15,writableGlobs,unownedGlobs)].filter(Boolean)){
       if(!seen.has(c)){seen.add(c);contexts.push(c);}
     }
   }
@@ -119,6 +121,7 @@ export function buildPrompt(report,{cycle=1,maxAttempts=6,attempt=1,priorAttempt
   lines.push(
     "","## CONSTRAINTS",
     `- Writable paths only: ${writableGlobs.join(", ")}`,
+    ...(unownedGlobs.length?[`- Generator-owned/vendored, do NOT edit even though they match a writable path: ${unownedGlobs.join(", ")}`]:[]),
     "- Do NOT modify tests, scripts, configuration, schemas, package metadata, lockfiles, AI_RULES.md, harness.json, or cycle logs.",
     "- Do NOT add @ts-ignore, @ts-expect-error, `as any`, biome-ignore, test.skip, test.only, xit, describe.skip, continue-on-error, or `|| true`.",
     "- Do NOT weaken assertions or reduce assertion count.",

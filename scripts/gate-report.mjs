@@ -2,6 +2,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { scanBanned } from "./lib/scan.mjs";
+import { loadUnownedGlobs } from "./lib/ownership.mjs";
 import { makeFailure, failureSignature, parseBiome, parseTsc, parseBuild, parsePlaywright, playwrightSelection } from "./lib/diagnostics.mjs";
 import { runSync, getFreePort, startProcess, stopProcessGroup, waitForHttp } from "./lib/process.mjs";
 import { head } from "./lib/git-state.mjs";
@@ -16,6 +17,7 @@ const runId=`${new Date().toISOString().replace(/[-:.]/g,"").replace("Z","Z")}-$
 const runDir=path.join(ROOT,".harness","runs",runId,"gate"); fs.mkdirSync(runDir,{recursive:true});
 let cfg;
 try{cfg=JSON.parse(fs.readFileSync(path.join(ROOT,"harness.json"),"utf8"));}catch{cfg=null;}
+const unownedGlobs=loadUnownedGlobs({cwd:ROOT});
 const stages=[];
 const order=tier===1?["standards","lint","typecheck","build","e2e"]:["standards","lint","typecheck","build"];
 let terminal=null;
@@ -29,7 +31,7 @@ function addNotRun(name){stages.push({gate:name,status:"not_run",durationMs:0,fa
 async function runStage(name){
   const s=Date.now();
   if(name==="standards"){
-    const findings=scanBanned({cwd:ROOT});
+    const findings=scanBanned({cwd:ROOT,unownedGlobs});
     const failures=findings.map(f=>makeFailure({gate:"standards",file:f.path,line:f.line,rule:f.id,message:"banned pattern"},ROOT));
     return {gate:name,status:failures.length?"failed":"passed",durationMs:Date.now()-s,failures};
   }

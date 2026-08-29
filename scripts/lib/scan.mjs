@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { matchesAny } from "./ownership.mjs";
 
 // The prompt renderer must quote every banned token to tell Dyad what not to
 // add. It is protected by Git verification and is the sole scan exclusion.
@@ -70,11 +71,12 @@ function codeOnly(text,rel){
   return text;
 }
 
-export function scanBanned({cwd=process.cwd(),roots=["src","e2e","scripts"],configPath="config/banned-patterns.json"}={}){
+export function scanBanned({cwd=process.cwd(),roots=["src","e2e","scripts"],configPath="config/banned-patterns.json",unownedGlobs=[]}={}){
   const cfg=JSON.parse(fs.readFileSync(path.join(cwd,configPath),"utf8"));
   const patterns=cfg.patterns.map(p=>({...p,re:new RegExp(p.regex,"g")})); const findings=[];
   for(const rootName of roots) for(const rel of walk(path.join(cwd,rootName),cwd)){
     if(EXCLUDED_PATHS.has(rel)) continue;
+    if(unownedGlobs.length && matchesAny(rel,unownedGlobs)) continue;
     let text; try{text=fs.readFileSync(path.join(cwd,rel),"utf8");}catch{continue;}
     const rawLines=text.split(/\r?\n/),codeLines=codeOnly(text,rel).split(/\r?\n/);
     for(let i=0;i<rawLines.length;i++) for(const p of patterns){

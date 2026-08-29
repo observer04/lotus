@@ -33,3 +33,31 @@ test("CYC-008 source symlink is rejected even under writable root",()=>{
   assert.equal(result.ok,false);
   assert.ok(result.violations.some(v=>v.type==="symlink"));
 });
+
+test("GATE-011 a committed edit to a generated file is denied despite living under the src/** writable glob",()=>{
+  const root=tempDir(); initRepo(root); fs.mkdirSync(path.join(root,"src"),{recursive:true});
+  fs.writeFileSync(path.join(root,"src/routeTree.gen.ts"),"export const routeTree = 1;\n"); fs.writeFileSync(path.join(root,"src/a.js"),"one\n");
+  const base=commitAll(root,"base");
+  fs.writeFileSync(path.join(root,"src/routeTree.gen.ts"),"export const routeTree = 2;\n"); const after=commitAll(root,"edit generated file");
+  const result=verifyProtected({before:base,after,cwd:root,writableGlobs:["src/**"],unownedGlobs:["src/**/*.gen.ts"]});
+  assert.equal(result.ok,false);
+  assert.ok(result.violations.some(v=>v.type==="unowned_path"&&v.path==="src/routeTree.gen.ts"));
+});
+
+test("GATE-011 an uncommitted edit to a generated file is denied without a commit",()=>{
+  const root=tempDir(); initRepo(root); fs.mkdirSync(path.join(root,"src"),{recursive:true});
+  fs.writeFileSync(path.join(root,"src/routeTree.gen.ts"),"export const routeTree = 1;\n"); const base=commitAll(root,"base");
+  fs.writeFileSync(path.join(root,"src/routeTree.gen.ts"),"export const routeTree = 2;\n");
+  const result=verifyProtected({before:base,after:base,cwd:root,writableGlobs:["src/**"],unownedGlobs:["src/**/*.gen.ts"]});
+  assert.equal(result.ok,false);
+  assert.ok(result.violations.some(v=>v.type==="unowned_path"&&v.path==="src/routeTree.gen.ts"));
+});
+
+test("GATE-011 creating a new generator-owned file under src/** is denied",()=>{
+  const root=tempDir(); initRepo(root); fs.mkdirSync(path.join(root,"src"),{recursive:true}); fs.writeFileSync(path.join(root,"src/a.js"),"one\n");
+  const base=commitAll(root,"base");
+  fs.writeFileSync(path.join(root,"src/anything.gen.ts"),"export const x = 1;\n");
+  const result=verifyProtected({before:base,after:base,cwd:root,writableGlobs:["src/**"],unownedGlobs:["src/**/*.gen.ts"]});
+  assert.equal(result.ok,false);
+  assert.ok(result.violations.some(v=>v.type==="unowned_path"&&v.path==="src/anything.gen.ts"));
+});

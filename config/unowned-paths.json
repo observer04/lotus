@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "globs": [
+    {"glob":"src/**/*.gen.ts","reason":"generator-owned; TanStack Router overwrites manual edits"},
+    {"glob":"src/**/*.gen.tsx","reason":"generator-owned"},
+    {"glob":"src/components/ui/**","reason":"vendored shadcn/ui components copied verbatim by the generator"}
+  ]
+}

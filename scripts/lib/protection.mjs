@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { changedPathsBetween, rawDiffBetween, statusEntries, git } from "./git-state.mjs";
+import { matchesAny } from "./ownership.mjs";
 
 function globMatch(pattern, p) {
   const norm=p.split(path.sep).join("/");
@@ -40,10 +41,15 @@ function modeViolations(rawParts, writableGlobs) {
   return violations;
 }
 
-export function verifyProtected({before, after, cwd=process.cwd(), writableGlobs=["src/**"]}) {
+export function verifyProtected({before, after, cwd=process.cwd(), writableGlobs=["src/**"], unownedGlobs=[]}) {
   const violations=[];
   const commitPaths=changedPathsBetween(before,after,cwd);
-  for(const p of commitPaths) if(!pathIsWritable(p,writableGlobs)) violations.push({type:"protected_path",path:p});
+  for(const p of commitPaths){
+    if(!pathIsWritable(p,writableGlobs)) violations.push({type:"protected_path",path:p});
+    // Unowned ⇒ unscanned ⇒ unwritable: generator-owned/vendored paths are denied
+    // even when a writable glob like src/** would otherwise allow them.
+    if(matchesAny(p,unownedGlobs)) violations.push({type:"unowned_path",path:p});
+  }
   violations.push(...modeViolations(rawDiffBetween(before,after,cwd),writableGlobs));
 
   const worktree=statusEntries(cwd);
@@ -52,6 +58,7 @@ export function verifyProtected({before, after, cwd=process.cwd(), writableGlobs
     for(const p of [entry.path,entry.otherPath].filter(Boolean)){
       worktreePaths.push(p);
       if(!pathIsWritable(p,writableGlobs)) violations.push({type:"protected_worktree_path",path:p,detail:entry.xy});
+      if(matchesAny(p,unownedGlobs)) violations.push({type:"unowned_path",path:p});
       const abs=path.join(cwd,p);
       try{
         const st=fs.lstatSync(abs);

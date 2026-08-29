@@ -1,8 +1,9 @@
 {
   "$schema":"https://biomejs.dev/schemas/1.9.4/schema.json",
-  "files":{"ignore":[".harness","node_modules","dist","build","playwright-report","test-results"]},
+  "files":{"ignore":[".harness","node_modules","dist","build","playwright-report","test-results","src/**/*.gen.ts","src/**/*.gen.tsx","src/components/ui/**","**/*.css"]},
   "linter":{
     "enabled":true,
     "rules":{"recommended":true,"correctness":{"useExhaustiveDependencies":"error"}}
-  }
+  },
+  "css":{"formatter":{"enabled":false},"linter":{"enabled":false}}
 }

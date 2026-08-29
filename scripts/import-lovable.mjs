@@ -11,6 +11,8 @@ import { ensureGitRepo, git, isClean, head } from "./lib/git-state.mjs";
 import { assertHarness } from "./lib/schema.mjs";
 import { scanSecrets } from "./lib/secrets.mjs";
 import { provesExhaustiveDependencies } from "./lib/biome-proof.mjs";
+import { loadUnownedGlobs } from "./lib/ownership.mjs";
+import { explainPlaywrightInstallFailure } from "./lib/playwright.mjs";
 
 const ROOT=fs.realpathSync(process.cwd());
 const sourceArg=process.argv[2];
@@ -98,6 +100,10 @@ try{
   requireOk(runSync(["npm","ci"],{cwd:stage,timeoutMs:300000}),"npm ci (normalized)");
 
   for(const rel of HARNESS_FILES){ const src=path.join(ROOT,rel); if(fs.existsSync(src)){ const dst=path.join(stage,rel); if(fs.existsSync(dst)) fs.rmSync(dst,{recursive:true,force:true}); if(fs.statSync(src).isDirectory()) copyTree(src,dst); else {fs.mkdirSync(path.dirname(dst),{recursive:true});fs.copyFileSync(src,dst);} } }
+  // Deterministic baseline normalization: formatting, import organization, and
+  // safe fixes only. biome.json (just copied above) already excludes generated
+  // and vendored paths. Residual errors are genuine findings, not import failures.
+  runSync(["npx","--no-install","biome","check","--write","src","e2e"],{cwd:stage,timeoutMs:120000});
   // Project-specific specs are committed after baseline-v1. Never carry a previous
   // customer's e2e suite into a new import.
   fs.rmSync(path.join(stage,"e2e"),{recursive:true,force:true});
@@ -116,9 +122,18 @@ try{
   if(biomeSmoke.status===0||!provesExhaustiveDependencies(biomeSmoke.stdout)) throw new Error("Biome proof failed: useExhaustiveDependencies did not fire at error severity");
 
   requireOk(runSync(caps.commands.build,{cwd:stage,timeoutMs:180000}),"normalized build");
-  const report=buildImportReport(stage,{...caps,commands:harness.commands}); fs.writeFileSync(path.join(stage,"import-report.md"),report.markdown);
+  const unownedGlobs=loadUnownedGlobs({cwd:stage});
+  const report=buildImportReport(stage,{...caps,commands:harness.commands},{unownedGlobs}); fs.writeFileSync(path.join(stage,"import-report.md"),report.markdown);
 
-  if(process.env.HARNESS_SKIP_BROWSER_INSTALL!=="1") requireOk(runSync(["npx","--no-install","playwright","install","chromium"],{cwd:stage,timeoutMs:300000}),"Playwright Chromium install");
+  if(process.env.HARNESS_SKIP_BROWSER_INSTALL!=="1"){
+    const install=runSync(["npx","--no-install","playwright","install","chromium"],{cwd:stage,timeoutMs:300000});
+    if(install.status!==0){
+      console.error(`Playwright Chromium install failed\n${install.stderr||install.stdout}`);
+      const explanation=explainPlaywrightInstallFailure(`${install.stdout}\n${install.stderr}`);
+      if(explanation) console.error(explanation);
+      process.exit(1);
+    }
+  }
 
   // Apply validated stage overlay. Existing harness documentation not present in stage remains intact.
   // e2e is harness-owned and intentionally replaced so stale customer tests cannot leak across imports.

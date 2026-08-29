@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { tempDir,initRepo,commitAll,copyHarnessCore,run,readJson,PROJECT_ROOT,git } from "../helpers/test-utils.mjs";
+import { scanBanned } from "../../scripts/lib/scan.mjs";
+import { loadUnownedGlobs } from "../../scripts/lib/ownership.mjs";
 
 function fakeTools(){
   const bin=tempDir("lotus-fake-bin-");
@@ -50,6 +52,27 @@ test("IMP-016 rejects high-confidence secret literals without printing their val
   const secret=["sk","proj","abcdefghijklmnopqrstuvwxyz123456"].join("-"); fs.writeFileSync(path.join(source,"src","secret.js"),`export const token = "${secret}";\n`);
   const root=target(); const r=runImport(root,source,bin); assert.notEqual(r.status,0);
   const output=`${r.stderr}\n${r.stdout}`; assert.match(output,/OPENAI_KEY src\/secret\.js:1/); assert.doesNotMatch(output,new RegExp(secret)); assert.equal(fs.existsSync(path.join(root,"src","secret.js")),false);
+});
+
+test("IMP-017/IMP-018 unowned generated and vendored paths are excluded from standards while surviving in the import report",()=>{
+  const bin=fakeTools(); const root=target();
+  const source=path.join(PROJECT_ROOT,"tests/fixtures/lovable-vite-react-ts");
+  const first=runImport(root,source,bin); assert.equal(first.status,0,first.stderr||first.stdout);
+
+  const unownedGlobs=loadUnownedGlobs({cwd:root});
+  const standardsFindings=scanBanned({cwd:root,unownedGlobs});
+  assert.deepEqual(standardsFindings.map(f=>f.path),[],"generator-owned/vendored paths must not reach the standards gate");
+
+  const report=fs.readFileSync(path.join(root,"import-report.md"),"utf8");
+  assert.match(report,/AS_ANY src\/routeTree\.gen\.ts/,"import report must still surface generator findings");
+  assert.match(report,/AS_ANY src\/components\/ui\/button\.tsx/,"import report must still surface vendored findings");
+  const testIdSection=report.slice(report.indexOf("## data-testid coverage"),report.indexOf("## Typecheck baseline"));
+  assert.doesNotMatch(testIdSection,/button\.tsx/,"vendored components are out of scope for the data-testid check");
+
+  const biomeCfg=readJson(path.join(root,"biome.json"));
+  for(const glob of ["src/**/*.gen.ts","src/**/*.gen.tsx","src/components/ui/**","**/*.css"]) assert.ok(biomeCfg.files.ignore.includes(glob),`biome.json missing ${glob} in files.ignore`);
+  assert.equal(biomeCfg.css.linter.enabled,false);
+  assert.equal(biomeCfg.css.formatter.enabled,false);
 });
 
 test("IMP-002 rejects symlink-bearing source rather than following escapes",()=>{

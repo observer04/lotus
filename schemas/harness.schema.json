@@ -11,6 +11,7 @@
     "framework":{"type":"string"},
     "commands":{"type":"object","required":["build","dev","typecheck","lint"],"properties":{"build":{"$ref":"#/$defs/argv"},"dev":{"$ref":"#/$defs/argv"},"typecheck":{"$ref":"#/$defs/argv"},"lint":{"$ref":"#/$defs/argv"},"e2e":{"$ref":"#/$defs/argv"}}},
     "writableGlobs":{"type":"array","minItems":1,"items":{"type":"string","minLength":1}},
+    "unownedGlobs":{"type":"array","items":{"type":"string","minLength":1}},
     "serverReadyTimeoutMs":{"type":"number","minimum":0}
   },
   "$defs":{

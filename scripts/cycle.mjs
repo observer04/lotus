@@ -6,6 +6,7 @@ import { head, isClean, git, readRef, updateRef, statusEntries, repositoryPrecon
 import { verifyProtected } from "./lib/protection.mjs";
 import { scanBanned } from "./lib/scan.mjs";
 import { buildPrompt } from "./lib/prompt.mjs";
+import { loadUnownedGlobs } from "./lib/ownership.mjs";
 import { decideTermination, progressMarker } from "./lib/termination.mjs";
 import { waitForInteractiveChange } from "./lib/invocation.mjs";
 import { assertGateReport, assertCycleRecord, assertHarness } from "./lib/schema.mjs";
@@ -23,6 +24,7 @@ const commitStablePolls=Number(process.env.HARNESS_COMMIT_STABLE_POLLS??process.
 const dirtyStablePolls=Number(process.env.HARNESS_DIRTY_STABLE_POLLS??15);
 let cfg;
 try{cfg=assertHarness(JSON.parse(fs.readFileSync("harness.json","utf8")));}catch(error){console.error(`precondition: invalid or missing harness.json: ${error.message}`);process.exit(2);}
+const unownedGlobs=loadUnownedGlobs({cwd:ROOT});
 if(!isClean(ROOT)){console.error("precondition: repository must be clean before a cycle");process.exit(2);}
 const repoCheck=repositoryPreconditions(ROOT);
 if(!repoCheck.ok){console.error(`precondition: unsafe Git state: ${repoCheck.issues.map(i=>i.type).join(", ")}`);process.exit(2);}
@@ -102,7 +104,7 @@ while(true){
   if(harnessElapsedMs()>=wallClockMs){rollbackAndRecord("escalated_timeout","wall_clock",rollbackTarget);process.exit(5);}
   const signature=report.failureSignature; attempts++; attemptsBySignature[signature]=(attemptsBySignature[signature]??0)+1;
   const attemptDir=path.join(runDir,`attempt-${attempts}`); fs.mkdirSync(attemptDir,{recursive:true}); const beforeSnapshot=snapshotGitState(ROOT); const before=beforeSnapshot.head;
-  const prompt=buildPrompt(report,{cycle:attempts,maxAttempts:6,attempt:attempts,priorAttempts:attemptHistory.filter(a=>a.signature===signature),cwd:ROOT,byteCeiling:Number(process.env.HARNESS_PROMPT_MAX_BYTES??48*1024),writableGlobs:cfg.writableGlobs??["src/**"]});
+  const prompt=buildPrompt(report,{cycle:attempts,maxAttempts:6,attempt:attempts,priorAttempts:attemptHistory.filter(a=>a.signature===signature),cwd:ROOT,byteCeiling:Number(process.env.HARNESS_PROMPT_MAX_BYTES??48*1024),writableGlobs:cfg.writableGlobs??["src/**"],unownedGlobs});
   const promptPath=path.join(attemptDir,"prompt.md"); fs.writeFileSync(promptPath,prompt); fs.mkdirSync(path.join(ROOT,".harness"),{recursive:true}); fs.writeFileSync(path.join(ROOT,".harness","active-prompt.md"),prompt);
   fs.writeFileSync(path.join(attemptDir,"before.json"),JSON.stringify({beforeSha:before,signature,attempt:attempts,snapshot:beforeSnapshot},null,2)+"\n");
   let invoked;
@@ -115,7 +117,7 @@ while(true){
     rollbackAndRecord("invocation_timeout",invoked.reason??"invocation_timeout",rollbackTarget);process.exit(4);
   }
   let after=head(ROOT);
-  const protection=verifyProtected({before,after,cwd:ROOT,writableGlobs:cfg.writableGlobs??["src/**"]}); const banned=scanBanned({cwd:ROOT});
+  const protection=verifyProtected({before,after,cwd:ROOT,writableGlobs:cfg.writableGlobs??["src/**"],unownedGlobs}); const banned=scanBanned({cwd:ROOT,unownedGlobs});
   fs.writeFileSync(path.join(attemptDir,"verification.json"),JSON.stringify({protection,banned},null,2)+"\n");
   for(const p of protection.changedPaths) attemptedPaths.add(p); for(const f of banned) attemptedPaths.add(f.path);
   if(!protection.ok||banned.length){

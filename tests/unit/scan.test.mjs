@@ -29,3 +29,15 @@ test("GATE-008 directive patterns match actual suppression comments but not disc
   fs.writeFileSync(path.join(root,"src/a.ts"),"// avoid @ts-ignore in this code\n// @ts-ignore\nconst x = nope;\n");
   assert.deepEqual(scanBanned({cwd:root}).map(f=>f.id),["TS_IGNORE"]);
 });
+
+test("GATE-011 unowned generated/vendored paths are excluded from the banned scan",()=>{
+  const root=tempDir();
+  fs.mkdirSync(path.join(root,"config"),{recursive:true}); fs.cpSync(path.join(PROJECT_ROOT,"config/banned-patterns.json"),path.join(root,"config/banned-patterns.json"));
+  fs.mkdirSync(path.join(root,"src/components/ui"),{recursive:true}); fs.mkdirSync(path.join(root,"src/routes"),{recursive:true});
+  fs.writeFileSync(path.join(root,"src/routeTree.gen.ts"),"export const routeTree = {} as any;\n");
+  fs.writeFileSync(path.join(root,"src/components/ui/button.tsx"),"const casted = props as any;\n");
+  fs.writeFileSync(path.join(root,"src/routes/index.tsx"),"const total = value as any;\n");
+  const unownedGlobs=["src/**/*.gen.ts","src/components/ui/**"];
+  const findings=scanBanned({cwd:root,unownedGlobs});
+  assert.deepEqual(findings.map(f=>f.path),["src/routes/index.tsx"]);
+});

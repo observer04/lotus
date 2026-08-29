@@ -46,10 +46,19 @@ The importer:
 3. creates `package-lock.json` before `npm ci` when necessary;
 4. verifies the source install/build;
 5. pins Node, Biome and Playwright scaffolding;
-6. proves `useExhaustiveDependencies` actually fires;
-7. generates `harness.json` and `import-report.md`;
-8. resets `e2e/` to an empty harness-owned scaffold so tests from a prior customer cannot leak into the new project;
-9. commits the normalized import and creates immutable `baseline-v1`.
+6. runs a non-fatal `biome check --write src e2e` so `baseline-v1` reflects deterministic formatting and import organization instead of raw generator output (residual errors are reported, not treated as an import failure);
+7. proves `useExhaustiveDependencies` actually fires;
+8. generates `harness.json` and `import-report.md`;
+9. resets `e2e/` to an empty harness-owned scaffold so tests from a prior customer cannot leak into the new project;
+10. commits the normalized import and creates immutable `baseline-v1`.
+
+If installing Playwright's Chromium build fails because the host is unrecognized (for example `ERROR: Playwright does not support chromium on ubuntu26.04-x64`), the importer prints the exact remediation and exits non-zero. It never sets the override itself:
+
+```bash
+PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 ./scripts/import-lovable.sh <source>
+```
+
+Pass it explicitly on the command line only once you have confirmed the risk; an unsupported host should fail loudly, not silently pass as supported.
 
 Running the same import again against unchanged input is a no-op. The importer never force-moves `baseline-v1`. Project-specific specification tests are deliberately committed **after** this baseline.
 
@@ -65,6 +74,18 @@ Running the same import again against unchanged input is a no-op. The importer n
 - dependencies outside `config/platform-dependencies.json`.
 
 Unknown dependencies are report-only in the MVP.
+
+### Unowned paths
+
+Not everything under `src/**` is application code. Current Lovable exports emit a generator-owned TanStack Router route tree (`src/**/*.gen.ts`, `src/**/*.gen.tsx`) and vendor shadcn/ui components verbatim under `src/components/ui/**`. `config/unowned-paths.json` versions this policy (each glob carries a `reason`); a project can extend it with harness.json's optional `unownedGlobs`.
+
+Unowned paths are **unowned ⇒ unscanned ⇒ unwritable**:
+
+- the standards scan never reports a banned pattern (like a generated file's `as any`) inside them;
+- a repair cycle is denied for touching one, committed or not, even though it lives under the writable `src/**` allowlist — this is Git-verified, not just scanner-side;
+- the Dyad prompt packet never offers one as editable source context.
+
+The import report still lists banned-pattern findings inside unowned paths — they are real defects worth knowing about, just not ones the harness will ever ask a fixer to touch. `biome.json`'s `files.ignore` is always kept as a superset of this policy (plus `**/*.css`, since Biome 1.9's CSS linter/formatter cannot parse Tailwind 4's `@import "tailwindcss" source(none)` and is disabled outright rather than patched per project).
 
 ## 2. Run gates
 
