@@ -1,0 +1,5 @@
+{
+  "schemaVersion": 1,
+  "policy": "report-only",
+  "allowed": ["@biomejs/biome","@playwright/test","@vitejs/plugin-react","vite","react","react-dom","typescript"]
+}

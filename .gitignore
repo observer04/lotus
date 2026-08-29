@@ -1,0 +1,13 @@
+.harness/runs/
+.harness/active-prompt.md
+node_modules/
+dist/
+build/
+playwright-report/
+test-results/
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+gate-report.json

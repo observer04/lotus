@@ -1,0 +1,9 @@
+import fs from "node:fs";
+import path from "node:path";
+const mode=process.env.HARNESS_E2E_DRIVER_MODE??"pass";
+const counter=path.join(".harness","fake-e2e-count"); fs.mkdirSync(path.dirname(counter),{recursive:true});
+let n=0; try{n=Number(fs.readFileSync(counter,"utf8"))||0}catch{} n++; fs.writeFileSync(counter,String(n));
+const fail=mode==="confirmed" || (mode==="flaky"&&n===1);
+const payload={suites:[{file:"e2e/coffee-ordering.spec.ts",specs:[{title:"R4 — Quantity never below 1; decrementing at quantity 1 removes the line",line:20,column:1,tests:[{results:[{status:fail?"failed":"passed",...(fail?{error:{message:"expected cart line absent"}}:{})}]}]}]}]};
+fs.writeFileSync(process.env.HARNESS_PLAYWRIGHT_JSON,JSON.stringify(payload));
+process.exit(fail?1:0);

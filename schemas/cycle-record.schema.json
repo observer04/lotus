@@ -1,0 +1,11 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "type":"object",
+  "required":["schemaVersion","cycleId","startedAt","finishedAt","tier","startCommit","endCommit","attempts","outcome","reason","durationSec","filesChanged","dyad"],
+  "properties":{
+    "schemaVersion":{"const":1},
+    "tier":{"enum":[0,1]},
+    "attempts":{"type":"integer","minimum":0},
+    "outcome":{"enum":["green","escalated_safety","escalated_signature_budget","escalated_total_budget","escalated_oscillation","escalated_no_progress","escalated_timeout","invocation_timeout","inconclusive_flaky","precondition_failed"]}
+  }
+}

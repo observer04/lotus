@@ -1,0 +1,13 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "type":"object",
+  "required":["schemaVersion","harnessVersion","source","nodeVersion","commands","writableGlobs"],
+  "properties":{
+    "schemaVersion":{"const":1},
+    "harnessVersion":{"type":"string"},
+    "source":{"type":"object","required":["kind","identity"]},
+    "nodeVersion":{"type":"string"},
+    "commands":{"type":"object","required":["build","dev","typecheck","lint"]},
+    "writableGlobs":{"type":"array","items":{"type":"string"}}
+  }
+}

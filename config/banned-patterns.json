@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "patterns": [
+    {"id":"TS_IGNORE","regex":"@ts-ignore"},
+    {"id":"TS_EXPECT_ERROR","regex":"@ts-expect-error"},
+    {"id":"AS_ANY","regex":"\\bas\\s+any\\b"},
+    {"id":"BIOME_IGNORE","regex":"biome-ignore"},
+    {"id":"TEST_SKIP","regex":"\\btest\\.skip\\s*\\("},
+    {"id":"TEST_ONLY","regex":"\\btest\\.only\\s*\\("},
+    {"id":"XIT","regex":"\\bxit\\s*\\("},
+    {"id":"DESCRIBE_SKIP","regex":"\\bdescribe\\.skip\\s*\\("},
+    {"id":"CONTINUE_ON_ERROR","regex":"continue-on-error"},
+    {"id":"OR_TRUE","regex":"\\|\\|\\s*true\\b"}
+  ]
+}

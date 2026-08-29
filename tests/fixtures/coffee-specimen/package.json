@@ -1,0 +1,6 @@
+{
+  "name":"coffee-specimen",
+  "version":"1.0.0",
+  "private":true,
+  "scripts":{"dev":"node server.mjs","build":"node -e \"process.exit(0)\""}
+}

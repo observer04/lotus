@@ -1,0 +1,16 @@
+{
+  "name": "lotus-lovable-cycle-harness",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Reusable Lovable import and Dyad test/fix cycle harness",
+  "scripts": {
+    "test": "node --test tests/unit/*.test.mjs tests/integration/*.test.mjs tests/acceptance/*.test.mjs",
+    "test:unit": "node --test tests/unit/*.test.mjs",
+    "test:integration": "node --test tests/integration/*.test.mjs",
+    "test:acceptance": "node --test tests/acceptance/*.test.mjs",
+    "harness:gate": "bash scripts/gate.sh",
+    "harness:scan": "bash scripts/scan-banned.sh"
+  },
+  "engines": {"node": "22.16.x"}
+}

@@ -1,0 +1,13 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "type":"object",
+  "required":["schemaVersion","runId","tier","commit","status","failureCount","failureSignature","durationMs","gates"],
+  "properties":{
+    "schemaVersion":{"const":1},
+    "tier":{"enum":[0,1]},
+    "status":{"enum":["passed","failed","inconclusive","errored"]},
+    "failureCount":{"type":"integer","minimum":0},
+    "failureSignature":{"type":["string","null"]},
+    "gates":{"type":"array"}
+  }
+}
