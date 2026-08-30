@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { tempDir,initRepo,commitAll,copyHarnessCore,run,readJsonl,PROJECT_ROOT,git } from "../helpers/test-utils.mjs";
 
 function setupCycle(initialState){
@@ -135,4 +135,32 @@ test("CYC-005/CYC-007 real Mode B watcher captures stable uncommitted source edi
   assert.equal(codeState(root),"FIXED");
   assert.match(git(root,["log","--format=%s","-4"]).stdout,/capture repair attempt/);
   assert.equal(git(root,["status","--porcelain"]).stdout,"");
+});
+
+test("CYC-019 a live cycle lock refuses a second concurrent cycle.sh",()=>{
+  const {root}=setupCycle("BROKEN");
+  // A genuinely separate, still-running process -- not this test's own pid --
+  // playing the role of an in-flight cycle.sh holding the lock.
+  const holder=spawn(process.execPath,["-e","setInterval(()=>{},1000)"],{stdio:"ignore"});
+  try{
+    fs.mkdirSync(path.join(root,".harness"),{recursive:true});
+    fs.writeFileSync(path.join(root,".harness","cycle.lock"),JSON.stringify({pid:holder.pid,startedAt:new Date().toISOString()}));
+    const before=readJsonl(path.join(root,"cycles.jsonl"));
+    const r=cycle(root,"noop");
+    assert.equal(r.status,2,r.stderr||r.stdout);
+    assert.match(r.stderr,/precondition:.*already running/);
+    assert.deepEqual(readJsonl(path.join(root,"cycles.jsonl")),before,"a refused start must not append a cycle record");
+    assert.equal(codeState(root),"BROKEN","a refused start must not touch the code tree");
+  } finally { holder.kill("SIGKILL"); }
+});
+
+test("CYC-019 a stale lock (pid no longer running) is reclaimed and the cycle proceeds",()=>{
+  const {root}=setupCycle("A");
+  fs.mkdirSync(path.join(root,".harness"),{recursive:true});
+  const dead=spawnSync(process.execPath,["-e","process.exit(0)"]);
+  fs.writeFileSync(path.join(root,".harness","cycle.lock"),JSON.stringify({pid:dead.pid,startedAt:new Date().toISOString()}));
+  const r=cycle(root,"green");
+  assert.equal(r.status,0,r.stderr||r.stdout);
+  assert.equal(codeState(root),"FIXED");
+  assert.equal(fs.existsSync(path.join(root,".harness","cycle.lock")),false,"the lock must be released again on a normal terminal path");
 });

@@ -1,8 +1,10 @@
 .harness/runs/
 .harness/active-prompt.md
+.harness/cycle.lock
 node_modules/
 dist/
 build/
+.output/
 playwright-report/
 test-results/
 .env

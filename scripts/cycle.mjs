@@ -10,6 +10,7 @@ import { loadUnownedGlobs } from "./lib/ownership.mjs";
 import { decideTermination, progressMarker } from "./lib/termination.mjs";
 import { waitForInteractiveChange } from "./lib/invocation.mjs";
 import { assertGateReport, assertCycleRecord, assertHarness } from "./lib/schema.mjs";
+import { acquireLock, releaseLock } from "./lib/lock.mjs";
 
 const ROOT=process.cwd();
 const args=process.argv.slice(2);
@@ -28,6 +29,9 @@ const unownedGlobs=loadUnownedGlobs({cwd:ROOT});
 if(!isClean(ROOT)){console.error("precondition: repository must be clean before a cycle");process.exit(2);}
 const repoCheck=repositoryPreconditions(ROOT);
 if(!repoCheck.ok){console.error(`precondition: unsafe Git state: ${repoCheck.issues.map(i=>i.type).join(", ")}`);process.exit(2);}
+const lock=acquireLock({cwd:ROOT});
+if(!lock.ok){console.error(`precondition: another cycle is already running (pid ${lock.existing.pid}, started ${lock.existing.startedAt})`);process.exit(2);}
+process.on("exit",()=>releaseLock({cwd:ROOT}));
 const startCommit=head(ROOT); const cycleId=`${startedAt.toISOString().replace(/[-:.]/g,"")}-${startCommit.slice(0,7)}`; const runDir=path.join(ROOT,".harness","runs",cycleId); fs.mkdirSync(runDir,{recursive:true});
 let lastGreen=readRef("refs/harness/last-green",ROOT); let attempts=0; let initialSignature=null; let finalSignature=null; let signatureHistory=[]; let progressHistory=[]; const attemptsBySignature={}; const attemptHistory=[]; const attemptedPaths=new Set(); const discardedFailureIds=new Set(); let invocationWaitMs=0;
 const harnessElapsedMs=()=>Date.now()-cycleStart-invocationWaitMs;

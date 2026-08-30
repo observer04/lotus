@@ -22,7 +22,7 @@ ensureGitRepo(ROOT);
 if(!isClean(ROOT)){console.error("import requires a clean target repository");process.exit(2);}
 
 const HARNESS_FILES=["scripts","config","schemas","AI_RULES.md","biome.json","playwright.config.ts",".gitignore",".nvmrc"];
-const EXCLUDE_NAMES=new Set([".git","node_modules","dist","build","playwright-report","test-results",".harness"]);
+const EXCLUDE_NAMES=new Set([".git","node_modules","dist","build",".output","playwright-report","test-results",".harness"]);
 const INCIDENTAL_LOVABLE_BUN_FILES=["bun.lock","bun.lockb","bunfig.toml"];
 function secretName(name){ return name===".env"||name.startsWith(".env."); }
 function isUrl(s){ return /^(?:https?:\/\/|ssh:\/\/|git@)/.test(s); }

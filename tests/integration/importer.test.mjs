@@ -12,6 +12,15 @@ function fakeTools(){
   const npx=`#!/usr/bin/env node\nconst a=process.argv.slice(2).join(' ');\nif(a.includes('biome lint')&&a.includes('__harness_exhaustive_deps_smoke')){console.log(JSON.stringify({diagnostics:[{category:'lint/correctness/useExhaustiveDependencies',severity:'error',message:'missing dependency'}]}));process.exit(1);}\nif(a.includes('biome')){console.log(JSON.stringify({diagnostics:[]}));process.exit(0);}\nprocess.exit(0);\n`;
   fs.writeFileSync(path.join(bin,"npm"),npm,{mode:0o755}); fs.writeFileSync(path.join(bin,"npx"),npx,{mode:0o755}); return bin;
 }
+// Simulates a generator whose build step writes an output directory outside
+// the source tree it started from (e.g. TanStack Start's Nitro .output/),
+// exactly like the real cozy-coffee-cart build.
+function fakeToolsWithBuildOutput(){
+  const bin=tempDir("lotus-fake-bin-build-output-");
+  const npm=`#!/usr/bin/env node\nimport fs from 'node:fs';\nconst args=process.argv.slice(2);\nif(args.includes('--package-lock-only')){const pkg=JSON.parse(fs.readFileSync('package.json','utf8'));fs.writeFileSync('package-lock.json',JSON.stringify({name:pkg.name??'app',version:pkg.version??'0.0.0',lockfileVersion:3,requires:true,packages:{'':{name:pkg.name??'app',version:pkg.version??'0.0.0'}}},null,2)+'\\n');}\nif(args[0]==='ci'){fs.mkdirSync('node_modules/.bin',{recursive:true});fs.writeFileSync('node_modules/.bin/biome','#!/bin/sh\\nexit 0\\n',{mode:0o755});}\nif(args[0]==='run'){fs.mkdirSync('.output/server',{recursive:true});fs.writeFileSync('.output/server/index.mjs','export default 1;\\n');}\nprocess.exit(0);\n`;
+  const npx=`#!/usr/bin/env node\nconst a=process.argv.slice(2).join(' ');\nif(a.includes('biome lint')&&a.includes('__harness_exhaustive_deps_smoke')){console.log(JSON.stringify({diagnostics:[{category:'lint/correctness/useExhaustiveDependencies',severity:'error',message:'missing dependency'}]}));process.exit(1);}\nif(a.includes('biome')){console.log(JSON.stringify({diagnostics:[]}));process.exit(0);}\nprocess.exit(0);\n`;
+  fs.writeFileSync(path.join(bin,"npm"),npm,{mode:0o755}); fs.writeFileSync(path.join(bin,"npx"),npx,{mode:0o755}); return bin;
+}
 function target(){
   const root=tempDir("lotus-import-target-"); initRepo(root); copyHarnessCore(root,{includeE2E:true});
   fs.writeFileSync(path.join(root,"README.md"),"# Harness\n"); fs.writeFileSync(path.join(root,"FINDINGS.md"),"# Findings\n"); fs.writeFileSync(path.join(root,"cycles.jsonl"),"");
@@ -73,6 +82,21 @@ test("IMP-017/IMP-018 unowned generated and vendored paths are excluded from sta
   for(const glob of ["src/**/*.gen.ts","src/**/*.gen.tsx","src/components/ui/**","**/*.css"]) assert.ok(biomeCfg.files.ignore.includes(glob),`biome.json missing ${glob} in files.ignore`);
   assert.equal(biomeCfg.css.linter.enabled,false);
   assert.equal(biomeCfg.css.formatter.enabled,false);
+});
+
+test("IMP-019 generator build output is excluded from the import and stays untracked across a rebuild",()=>{
+  const bin=fakeToolsWithBuildOutput(); const root=target();
+  const source=path.join(PROJECT_ROOT,"tests/fixtures/lovable-vite-react-ts");
+  const first=runImport(root,source,bin); assert.equal(first.status,0,first.stderr||first.stdout);
+
+  assert.equal(fs.existsSync(path.join(root,".output")),false,"build output must not be copied into the normalized import");
+  assert.equal(git(root,["status","--porcelain"]).stdout,"","import itself must leave a clean tree");
+
+  // The regression: a later rebuild (what every Tier 0 build stage does) must
+  // not dirty the tree just because the build step writes output again.
+  run(["npm","run","harness:build"],{cwd:root,env:{PATH:`${bin}:${process.env.PATH}`}});
+  assert.equal(fs.existsSync(path.join(root,".output")),true,"the rebuild step itself should still run and produce output on disk");
+  assert.equal(git(root,["status","--porcelain"]).stdout,"","a rebuild must not dirty the tree with regenerated build output");
 });
 
 test("IMP-002 rejects symlink-bearing source rather than following escapes",()=>{
