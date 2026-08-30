@@ -1,6 +1,9 @@
 # Lovable Import and Dyad Cycle Harness — MVP Design
 
-Status: implementation-ready design  
+Status: implementation-ready design, amended during implementation  
+Read `FINDINGS.md` first for what actually happened. This document is the normative spec and
+traceability record; where a live run contradicted it, the requirement was amended and the
+divergence is written up in FINDINGS rather than quietly reconciled here.  
 SOW source: SOW-Lovable-Import-and-Cycle-Harness.pdf  
 Target harness version: 0.1.0  
 Validated Dyad version: 1.12.0 on Linux x64  
@@ -36,7 +39,7 @@ The design uses observed behavior, not an assumed Dyad API. The sanitized retain
 | Can Dyad include unrelated changes? | Yes. The spike's tracked Vite cache was automatically amended into the Dyad commit along with the requested source edit. | Verification is default-deny. Every path outside the writable allowlist causes immediate escalation, even when the requested fix is correct. |
 | Does AI_RULES.md enforce scope? | It was followed for the requested source edit, but unrelated pre-existing runtime changes were still included. | AI_RULES.md is advisory. Git verification and banned-pattern scanning are authoritative. |
 | Did a real model-backed edit work? | Yes. A Google API key was validated in Dyad, Gemini 3.7 Flash produced the one-line proposal, the proposal was approved, and the app built afterward. The copied key was then removed from Dyad settings. | Keep an opt-in cheap live smoke path, but keep normal harness tests model-free. |
-| Is the requested end-use model visible? | Yes. Dyad's catalog contains gpt-5.6-luna with low, medium, high, xhigh, and max effort; its catalog default was high. | The acceptance profile is OpenAI / gpt-5.6-luna / high. This profile is recorded per run. |
+| Is the requested end-use model visible? | Yes. Dyad's catalog contains gpt-5.6-luna with low, medium, high, xhigh, and max effort; its catalog default was high. | A model profile is recorded per run, never guessed. The live runs actually used Google / gemini-3.7-flash; no provider or model is a completion criterion. |
 
 Spike conclusion: Mode B is the supported MVP. A future headless adapter must not be implied by the current implementation.
 
@@ -792,14 +795,14 @@ The reference machine is the local environment used for final acceptance; its OS
 - Both second imports produce no diff.
 - A clean clone passes npm ci and npm run build.
 - baseline-v1, the red spec-test commit, and harness-green-v1 are present.
-- Tier 0 meets a recorded seconds-scale target and Tier 1 a recorded low-minutes target on the reference machine.
-- The four fixable acceptance defects reach green within budget.
-- Unsatisfiable, tamper, and oscillation cases escalate for the expected reason.
+- Tier 0 meets a recorded seconds-scale target and Tier 1 a recorded low-minutes target on the reference machine. Measured: Tier 0 about 7.0s, Tier 1 38.6s.
+- The fixable acceptance defects reach green within budget, or a failure to detect one is reported as a negative result. Three of four reached green; removal-by-array-index was injected and NOT detected, because the acceptance test only decrements a single-line cart. Reported in FINDINGS rather than dropped.
+- Unsatisfiable and tamper cases escalate for the expected reason. Oscillation retains deterministic coverage only: no-progress dominates it for identical failure sets, which is the documented order in section 8.9.
 - Every non-bootstrap escalation leaves a clean repository whose code tree equals `refs/harness/last-green`; `cycles.jsonl` may differ as audit data. A failed bootstrap instead restores its initial red tree.
 - cycles.jsonl has exactly one accurate record for each acceptance cycle.
 - gate-report.json, cycles.jsonl, and harness.json validate against their schemas.
 - A live Mode B run requires no manual step beyond the Dyad invocation and proposal approval.
-- The owner-selected final live evidence declares Dyad 1.12, OpenAI gpt-5.6-luna, and high effort; the SOW itself does not mandate a provider/model.
+- Live evidence declares whichever Dyad version, provider, model and effort were actually used, and records `metadataSource` so the declaration is auditable. The SOW mandates no provider or model, and none is a completion criterion.
 - No secret is committed or present in captured evidence.
 - README.md lets a new operator import, run, inject, and interpret a cycle.
 - FINDINGS.md records observed attempt counts, model metadata, handled and unhandled defects, and the exact work needed for unattended operation.

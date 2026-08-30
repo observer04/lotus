@@ -1,5 +1,12 @@
 # Adversarial Review — `design.md` (+ the `6e4b5e0`/`e9a3282` implementation)
 
+> **Historical artifact.** This is a point-in-time adversarial review of `design.md` and the
+> implementation as of commit `e9a3282`, written before the harness had ever run against a genuine
+> Lovable export. It is retained as evidence of the review process, not as a live document: the
+> accepted findings were implemented, and several of its concerns were later superseded by defects
+> that only real exports exposed. `FINDINGS.md` records what actually happened.
+
+
 Reviewer: Claude (Opus 5). Date: 2026-08-29.
 Reviewed: `design.md` @ `faab2c1`, `SOW-Lovable-Import-and-Cycle-Harness.pdf`, and the harness code at `origin/main` `e9a3282`.
 Method: read both documents end to end, then executed the implementation to test the design-level claims rather than assert them. `npm test` is 44/44 green on Node v24.19.0; every "PROVEN" finding below is backed by a command run in this repo.
