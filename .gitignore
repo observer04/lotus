@@ -15,3 +15,4 @@ test-results/
 /gate-report.json
 /.gate-report.*.tmp
 .claude/
+SOW-*.pdf

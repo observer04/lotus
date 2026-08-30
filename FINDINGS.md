@@ -1,297 +1,174 @@
 # Findings
 
-## Dyad capability spike
+Reference environment: Ubuntu 26.04, Linux x64, Node 22.16.0, npm 11.6.1, Git 2.53.0, Dyad 1.12.0
+stable, Biome 1.9.4, Playwright 1.58.2 (Chromium only).
 
-Reference environment: Dyad 1.12.0 stable on Linux x64.
+## The short version
 
-Sanitized retained evidence: `evidence/dyad-spike-2026-08-29.md`.
+The brief describes a half-built coffee app that a harness repairs through Dyad. Two genuine Lovable
+exports told a different story, and most of the engineering effort went into the gap between the two.
+Everything below came from running the thing, not from reading the brief.
 
-- No supported public CLI/headless prompt invocation was found. The MVP therefore uses Mode B.
-- Existing projects can be imported in place, so Dyad and the harness can operate on the same Git working tree.
-- Build mode is required. Agent mode is intentionally excluded because it owns an inner test/fix loop that would hide intermediate attempts from this harness.
-- Build mode proposals require operator approval.
-- Dyad may create Git commits for approved edits. The harness verifies the complete before/after SHA range and the current working tree.
-- `AI_RULES.md` is advisory. Default-deny Git verification and banned-pattern scanning are authoritative.
+## Where the brief and reality diverged
 
-The earlier spike also reported one approved Gemini 3.7 Flash source edit using `GOOGLE_API_KEY`, followed by a successful build and removal of the copied settings key. The retained sanitized evidence proves the Dyad version, proposal/approval/commit path, and unrelated-file observation, but intentionally does not retain the key, prompt, response, or source. No live model call was made during the present adversarial-review pass.
+| The brief assumed | What two genuine exports actually did | What it cost |
+|---|---|---|
+| A small Vite/React single-page app | TanStack Start (server-rendered, Nitro), a generated route tree, 40+ vendored shadcn files, Tailwind 4 | `src/**` is mostly not the application |
+| `src/**` is the app, so it is the writable scope | About 5 files of real application code inside ~55 files of generated and vendored scaffolding | Needed an ownership boundary, not a directory |
+| Grep the banned patterns across `src/` | Generated code legitimately contains `as any` and `@ts-nocheck` | The scanner assumed every file under `src/` was model-owned |
+| A pinned Biome gates the tree | Biome 1.9.4 cannot parse Tailwind 4, and its recommended rules fire 22 times on vendored boilerplate | The gate was designed for a tree that does not exist |
+| The specimen is defective and gets repaired | Integer cents, the `coffee-cart-v1` storage key, the order-number format and the 8% tax were all already correct | The defect classes had to be injected, not discovered |
+| Pinned Playwright installs anywhere | Playwright 1.58.2 refuses this host platform outright | The host needs an explicit, documented override |
 
-### Dyad behavioral observation: copy-mode import is the default, and it is silent
+The practical consequence: the first real gate run died in 0.2 seconds on a generated file, and a
+direct Biome run reported 127 errors of which about 5 were genuine application defects. Sending that
+to a model would have burned the entire attempt budget on formatting vendored boilerplate and editing
+a file the generator overwrites on every build.
 
-The spike above answered "can an existing app be used in place?" with yes -- and it can. What the spike
-did not surface, because the spike's own import happened to use it correctly, is that **importing in
-place is not Dyad's default**. Dyad's default import mode copies the project into `~/dyad-apps/<name>`;
-every subsequent edit Dyad makes lands in that copy, not the tree the harness is watching. Live evidence:
-cycle `20260829T171908846Z-6214bb9` against the coffee specimen ended `invocation_timeout` after waiting
-its full default window, because Dyad had imported with copying enabled. The harness behaved correctly --
-it watched the correct tree, saw no change because there genuinely was none, and timed out and rolled back
-exactly as designed. There is no distinguishing signal between this and an operator who simply never
-pasted the prompt or never clicked approve; Dyad gives no warning that it copied the project, and the
-mistake costs a full invocation-timeout window (10 minutes by default) to surface, plus however long it
-takes the operator to notice the watched tree never changed. This silently breaks the single-tree
-assumption the entire Mode B contract rests on, and it is now documented plainly in the README next to the
-Mode B instructions rather than left to be rediscovered.
+The fix was one rule, enforced in three places: **anything excluded from the standards scan and the
+lint gate is also denied by Git verification.** Generated and vendored paths, listed in
+`config/unowned-paths.json`, are unlinted, unscanned and unwritable, so an exclusion can never become
+a hiding place for an edit.
 
-## SOW ambiguities resolved
+## Where Dyad and its documented behaviour diverged
 
-- A missing npm lockfile is generated before `npm ci`.
-- The banned scanner does not scan its own pattern-definition source.
-- All fixer changes are default-deny except the configured writable allowlist (`src/**` by default).
-- Rollback is additive and preserves failed commits in ancestry.
-- Initial convergence is an explicit bootstrap case because no verified green ref exists yet.
-- The referenced platform dependency list was absent from the SOW, so it is a versioned report-only policy under `config/`.
-- A rejected/no-write Dyad proposal cannot be distinguished through the Mode B filesystem watcher and is classified as `invocation_timeout`.
-- The 20-minute cycle ceiling measures harness execution and excludes the separately recorded Mode B invocation wait; invocation timeout defaults to 10 minutes.
-- For no-progress, reaching a later fail-fast stage is progress. Within one stage, diagnostic count must improve. This avoids treating lint-to-typecheck advancement as regression.
-- No-progress normally dominates the three-attempt signature budget for an identical failure set; the signature budget remains a backstop for a stable class whose diagnostic instances are decreasing.
+The capability spike asked whether an existing app can be used in place and got yes. It did not ask
+what the **default** is, and the default is to copy.
 
-## Claude adversarial review disposition
+When Dyad imports in copy mode, every edit lands in `~/dyad-apps/<name>` rather than the repository
+the harness watches. The harness then waits on a tree that will never change, which is
+indistinguishable from an operator who never pasted the prompt, and eventually records an invocation
+timeout. That cost an hour of live session time and produced one of the nine cycle records below.
+Dyad must import the project in place with copying disabled, and that is now the first thing the
+README says about the Dyad loop.
 
-Accepted and implemented:
+Two smaller behaviours worth recording. Dyad writes its own `.dyad/` metadata directory into the
+repository, which trips default-deny verification exactly like any other unexpected path. And Dyad
+does not always commit; it may leave approved edits uncommitted, which the watcher handles as a
+separate completion path with a longer quiet period.
 
-- Green takes precedence over a wall-clock crossing during the completed gate.
-- Progress is stage-aware; common build diagnostics are parsed before a fallback record.
-- The banned scanner covers `src/`, `e2e/`, and `scripts/`, masks prose for code-token rules, reports excerpts, and excludes only the prompt renderer.
-- The real Mode B watcher is tested for both clean commits and stable uncommitted writes.
-- Cycle records distinguish net `filesChanged` from `attemptedPaths`, carry discarded E2E IDs, separate wall/harness/invocation durations, and never invent model metadata.
-- Playwright confirmation must select the requested R-rule IDs; zero selection is an errored gate.
-- Source context follows configured writable roots; temporary gate reports are ignored; build parsing, schemas, traceability, scope reduction, repository map, rollback wording, and test taxonomy were reconciled.
-- Source import now has a separate, versioned high-confidence secret detector whose errors omit matched values.
-- A non-Vite synthetic import fixture proves capability detection does not assume Vite.
+## Three defects that only real exports could find
 
-Not adopted as proposed:
+The deterministic suite was green at 62 tests and stayed green through all three of these. Each was
+invisible to fixtures and appeared within minutes of running against a genuine export.
 
-- R8 confirmation remains a fresh process/browser context. The R8 test establishes its own cart, then reloads within that test; depending on another test's residue would be invalid isolation.
-- Missing-lockfile no-op does not regenerate a lockfile: unchanged source identity exits before staging or npm access.
-- The OpenAI `gpt-5.6-luna`/high profile remains because the project owner explicitly selected it, not because the SOW mandates it. Undeclared runs now record null metadata.
-- Additive rollback remains preferable to moving `HEAD` backward. Acceptance is defined by code-tree equality with the last-green ref while preserving red ancestry and `cycles.jsonl` audit data.
+**npm lockfile generation is not single-pass.** `npm install --package-lock-only` writes an
+internally inconsistent lockfile that `npm ci` then rejects. Running the identical command a second
+time reconciles it. Reproduced on both exports: pass one fails, pass two passes, pass three onward is
+byte-stable. The cause is a package declaring `ajv` as an optional peer dependency, which install and
+ci resolve differently. The importer now reconciles until `npm ci` accepts the lockfile and two
+consecutive passes are byte-identical.
 
-## Deterministic validation
+**The Biome parser was written against a JSON shape 1.9.4 does not emit.** Diagnostic messages were
+stored as a raw JSON array, and every lint diagnostic got a null line number, because 1.9.4 reports
+source positions as a pair of UTF-8 byte offsets rather than an object. Because the line was null,
+the prompt packet silently rendered no source context at all. The requirement to include fifteen
+lines either side of each failure had been inert for the entire lint gate, and no test caught it
+because every fixture used the wrong shape too.
 
-On 2026-08-29, the expanded suite passed 62/62 tests under the pinned runtime:
+**Build output was committed at import.** The importer runs a validation build in staging and then
+copies staging to the target, so Nitro's `.output` directory became tracked files. Every later gate
+rebuild dirtied them, and default-deny correctly escalated on them. That produced a false safety
+escalation which discarded a correct one-file repair.
 
-- Linux x64, kernel 7.0.0-30-generic
-- Node 22.16.0, npm 11.6.1, Git 2.53.0
-- `npm ci --ignore-scripts`: passed, zero vulnerabilities in the template package
-- `npm test`: 62 passed, 0 failed, 8.64 seconds
-- Local Playwright browser cache contains Chrome for Testing 149.0.7827.55 and 151.0.7922.34; the imported-project rehearsal must still prove the pinned Playwright/browser pair end to end
+All three are fixed with regression tests. The suite went from 62 to 97, and nearly all of the new
+tests are regressions for these rather than coverage for new features.
 
-The deterministic reference-runtime check is complete. Final reference evidence still needs the imported project's exact Chromium/Playwright version, Tier 0 duration, and Tier 1 duration.
+## Two red tests, opposite verdicts
 
-A disposable synthetic rehearsal also exercised the real importer with Node 22 and npm: the first import completed in 12.18 seconds, the second was a 0.15-second no-op at the same `HEAD`, `baseline-v1` remained correct, and Tier 0 correctly reported the fixture's intentional Biome formatting failure in 0.31 seconds. This validates the machinery but is not substituted for genuine Lovable-export evidence.
+Both looked identical at the failure-signature level. Both were settled by reading the brief.
 
-## R1-R8 specification defect: an SSR hydration race, caught before a model attempt
+**The specification was wrong.** Seven of the eight acceptance tests failed on what looked like
+broken cart behaviour. The application is server-rendered, so its markup, including every test hook,
+is present in the server HTML. Playwright's checks that an element is ready passed while React had
+not yet attached its handlers, and the mount effect then overwrote any state a too-early click
+produced. The proof was a two-line comparison: clicking immediately after reload gives zero cart
+lines, clicking after waiting for hydration gives one. The fix was a precondition in the test, with
+no assertion changed.
 
-Real Tier 1 execution against the imported `cozy-coffee-cart` specimen (commit `6d5486b0`) initially
-returned 7 of 8 R1-R8 tests failing, with failure signatures that read exactly like application defects:
-cart lines never appearing after "Add to cart," money rows missing, checkout staying disabled. Only R1 --
-the one test that never interacts with the page -- passed.
+**The application was wrong.** The one remaining failure was the tax label. The application renders
+`Tax (8%)`, while the brief states that `Subtotal`, `Tax` and `Total` are exact strings. That is a
+genuine defect in the generated app, and it was left red on purpose as the target for a live repair.
 
-Isolated with a controlled A/B on the same app and the same click, varying only whether the test waited for
-client hydration first:
+This is the argument for keeping a person in the loop. A harness that forwarded every red gate
+straight to the model would have sent it to fix a working application, and the likely result is
+defensive workarounds bolted into correct source to satisfy a broken test.
 
-```
-NO hydration wait  : cart-line count = 0
-WITH hydration wait: cart-line count = 1
-```
+## Results
 
-Root cause: `src/routes/index.tsx` is server-rendered (TanStack Start). Every `data-testid` is present in the
-SSR HTML before React attaches event handlers, so Playwright's actionability checks -- which only inspect
-the DOM -- let a click through before hydration completes. Worse, even a click that lands early gets
-overwritten a moment later when the mount effect runs `setCart(loadCart())`. R1 never exercises this path,
-which is why it alone passed against the unmodified spec.
-
-The operator adjudicated this as a bad test, not bad source, and the fix landed in the spec
-(`e2e/fixtures.ts`'s `waitForHydration`), never in `src/**`. It adds a precondition only: zero assertions,
-selectors, or test titles changed. The wait gates on `localStorage.getItem("coffee-cart-v1") !== null`,
-because the cart-persistence effect writes that exact key once the component has mounted -- and
-`coffee-cart-v1` is the SOW's own normative storage key (R8), not an incidental implementation detail
-picked for convenience.
-
-After the fix: 7 of 8 R1-R8 tests pass against the real specimen. The one residual failure (R5) is a plain
-string mismatch -- the app renders the tax line as `Tax (8%)`, the spec's `getByText("Tax", { exact: true
-})` expects the bare word `Tax`.
-
-**General lesson for applying this harness to what Lovable emits today**: a spec authored against a CSR
-(client-rendered) assumption produces failures on an SSR export that are indistinguishable, from the
-failure signature alone, from real application defects, because the server-rendered markup already
-satisfies every one of Playwright's DOM-presence and visibility checks. Handed to a live Dyad session
-unmodified, this would have produced five or more real-looking defects with no fix available in `src/**`,
-burning attempt budget toward an oscillation or signature-budget escalation before anyone noticed the spec,
-not the application, was wrong. Catching it by hand first is the SOW's "cheapest legitimate route" instinct
-applied to Component B: **check the test's own framework assumptions against what the generator actually
-emitted before trusting a red gate to mean a red application.**
-
-### R5 adjudicated: the opposite verdict, reached the same way
-
-R5's `Tax` mismatch went the other direction from the hydration case. SOW Appendix A states, verbatim:
-"Strings (exact): Your cart is empty, Subtotal, Tax, Total, Order confirmed." `Tax` is a normative exact
-string; the specimen renders `Tax (8%)` at `src/routes/index.tsx:314` and `:429`. Here **the spec is right
-and the specimen is wrong** -- the opposite of the hydration finding, where the spec was wrong and the
-specimen was right. R5 is left red; it is a legitimate Dyad target and `src/**` is not touched for it.
-
-The transferable point is the contrast itself, not either individual verdict: two red e2e tests with
-near-identical failure signatures (an element the assertion expects is not found/not matching) resolved to
-opposite conclusions -- one a defective spec (fixed with a zero-assertion-change precondition), one a
-defective specimen (left red for the repair loop) -- and both were settled the same way, by reading the SOW
-rather than by preference. **A red e2e gate does not by itself tell you which side is wrong; the failure
-signature looks identical either way.** Adjudicating it is exactly the judgment Mode B's human-in-the-loop
-boundary exists to preserve: a harness that auto-forwarded every red gate straight to the model, with no
-operator check against the actual normative requirement, would have "fixed" a working application in the
-hydration case and rubber-stamped a real defect as unfixable spec noise in the R5 case if the calls had
-been made carelessly, or reversed.
-
-## Known spec-depth gap: line-total size modifier is untested
-
-SOW money rules state, verbatim: "Line total = (base + size modifier) x qty" with Size: Small +$0.00,
-Medium +$0.50, Large +$1.00. The specimen's `lineTotalCents` (`src/routes/index.tsx:89`) is
-`product.priceCents * line.qty` -- no size modifier applied at all, for any size. This is a real SOW
-violation, and it is **not caught by the current R1-R8 suite**: R5, the only test that checks line-total
-math, exercises a Small item exclusively (`addItem(page, "latte", "Small", "Whole")`), where the modifier
-is +$0.00 and the missing-modifier bug is invisible by construction. Ordering a Medium or Large would
-immediately expose it.
-
-This gap is recorded rather than closed. Reason: deadline-bounded prioritization of outcome breadth (import
-idempotency, real Tier 0/1 execution, the hydration-race adjudication, the defect-matrix staging) over spec
-depth, and more red at this point raises the real risk of never reaching a green baseline at all before the
-deadline -- an honestly recorded gap is worth more than a rushed assertion added without time to verify its
-own correctness against the live specimen. This is the first item a follow-up should address: extend R5 (or
-add an R5b) to exercise a non-Small size and assert the modifier is applied, which would very likely turn
-this into a second live, legitimate Dyad repair target alongside the `Tax` string defect.
-
-## Acceptance evidence
-
-Deterministic tests are model-free. Remaining MVP evidence is intentionally not claimed by synthetic tests:
-
-- import and no-op evidence for two genuine, distinct Lovable exports;
-- clean-clone `npm ci && npm run build` on Node 22.16.0;
-- real Chromium R1–R8 baseline and Tier 0/Tier 1 timings;
-- one auditable Mode B repair and the full SOW defect matrix;
-- the owner-selected Dyad 1.12 / OpenAI `gpt-5.6-luna` / high final run;
-- cycle-log/schema audit and a final secret scan of committed and captured evidence.
-
-Record observed attempt counts, timings, model metadata, handled classes, escalations, and flaky/discarded test IDs here as those live runs complete.
-
-## The `.output` false escalation
-
-Live cycle `20260830T142422432Z-3ef6186` against the coffee specimen produced 16
-`protected_worktree_path` violations, all under `.output/**` (TanStack Start's Nitro build output),
-and escalated `escalated_safety` -- rolling back the fixer's correct, single-file edit along with them.
-The mechanism worked exactly as designed: `.output/` was never excluded from the normalized import
-(`EXCLUDE_NAMES` in `import-lovable.mjs` covered `.git`, `node_modules`, `dist`, `build`,
-`playwright-report`, `test-results`, `.harness`, but not `.output`, and the harness's own `.gitignore`
-had no entry for it either), so a rebuild during Tier 0's build stage regenerated `.output/` inside the
-target and every file in it was untracked and outside the `src/**` writable allowlist. Default-deny
-verification correctly refused to guess that regenerated build output was safe to ignore -- it has no
-way to distinguish "harmless rebuild artifact" from "an edit outside the allowlist" without being told
-which paths are which, and it was not told. Fixed by adding `.output` to `EXCLUDE_NAMES` and `.output/`
-to `.gitignore` (IMP-019), with a regression test whose second assertion -- a rebuild after import must
-leave `git status` clean, not just "the initial import doesn't track it" -- is the one that actually
-protects the loop, since the false escalation came from a *later* rebuild, not the import itself.
-
-This is the argument for default-deny, not against it: a permissive verifier would have let the false
-escalation slide as a "probably fine" build artifact and logged a clean-looking cycle, hiding the gap
-until it silently broke a real repair later, on a project where the artifact drifted to look enough
-like an edit to be missed by eye. Default-deny turned an invisible gitignore gap into a loud, correctly
-diagnosed, immediately-fixable failure the first time it was exercised against a genuine export's real
-build tool.
-
-## What unattended operation still needs
-
-The repair loop ran **unattended end to end** on a real Dyad session: built the failure packet, waited
-on the GUI for a human-approved edit, detected the write, verified it against default-deny protection,
-escalated on a genuine violation, rolled back additively, wrote a schema-valid cycle record, and left a
-clean tree -- with no operator intervention *inside* the loop itself. The one manual step Mode B
-requires by design is the GUI paste-and-approve; everything else (diagnosis, prompt construction,
-verification, rollback, logging) ran without a human deciding anything.
-
-What did require a human across this project was two different kinds of thing, and they should not be
-conflated:
-
-- **Defects.** npm's lockfile-reconciliation quirk, the Biome 1.9.4 diagnostic-shape mismatch, and now
-  `.output` tracking were each found only by running the harness against genuine Lovable exports and a
-  real Dyad cycle -- no amount of synthetic fixture testing surfaced any of the three. Each is now fixed
-  permanently in the harness (`scripts/lib/lockfile.mjs`, the `parseBiome` rewrite, `EXCLUDE_NAMES`/
-  `.gitignore`) with a regression test, so none of them recur on the next import or the next cycle.
-- **Adjudication.** Deciding the hydration failures were a defective *spec* while R5's `Tax` mismatch
-  was a defective *specimen* is human judgment against the SOW, not a defect in the harness. This is not
-  a gap to be automated away -- it is the boundary Mode B's human-in-the-loop design deliberately
-  preserves. A harness that auto-forwarded every red e2e gate straight to a model, with no operator
-  check against the actual normative requirement, would have "fixed" a working application in the
-  hydration case. Removing that adjudication step would not make the harness more unattended in any
-  sense worth having; it would make it wrong more often.
-
-Concrete gaps that remain for genuinely unattended (no-human-anywhere) operation, stated plainly:
-
-- No headless Dyad interface exists. Mode B is a GUI paste-and-approve step because that is what Dyad
-  1.12 actually exposes (`evidence/dyad-spike-2026-08-29.md`); a fully unattended loop needs either a
-  Dyad-provided headless/API mode that does not currently exist, or a different model-invocation path
-  entirely.
-- Evidence collection into `evidence/` is now scripted (`scripts/evidence.sh`), which stages the files,
-  schema-validates every cycle record, and secret-scans the staged copy before writing. Deciding *what
-  narrative* the evidence supports remains manual.
-- Installing the R1-R8 spec into an imported project's `e2e/` after `baseline-v1` is a documented manual
-  copy (`cp tests/fixtures/acceptance-spec/*.ts e2e/`), not a harness script step.
-
-
-## Acceptance matrix results
-
-Measured on the reference machine (Ubuntu 26.04, Linux x64, Node 22.16.0, npm 11.6.1, Git 2.53.0,
-Chromium via pinned Playwright 1.58.2). Full `cycles.jsonl` is retained at `evidence/coffee/`.
-
-Gate performance, Tier 1, averaged over four consecutive real runs on the coffee specimen:
-
-| Stage | Duration |
-|---|---:|
-| standards | 0.0 s |
-| lint | 0.1 s |
-| typecheck | 4.6 s |
-| build | 2.3 s |
-| e2e (Chromium, R1-R8) | 31.3 s |
-| **Tier 1 total** | **38.6 s** |
-| **Tier 0 total** (standards -> build) | **~7.0 s** |
-
-Nine cycles, every record schema-valid against `schemas/cycle-record.schema.json`. The `driver` column is
-verifiable independently of this table: live rows carry `dyad.metadataSource: "operator-declared"`,
-adapter rows carry `"test-adapter"`, and the harness never guesses that field.
+Nine cycles against the coffee specimen, every record valid against the cycle-record schema. The
+driver of each row is verifiable independently of this table: live rows record the operator-declared
+model metadata, adapter rows record the test adapter, and the harness never guesses that field.
 
 | # | Scenario | Driver | Outcome | Attempts |
 |---:|---|---|---|---:|
-| 1 | R5 packet, operator never pasted | live Dyad (Mode B) | `invocation_timeout` | 1 |
-| 2 | R5 repair, tree carried untracked `.output/` build artifacts | live Dyad (Mode B) | `escalated_safety` | 1 |
-| 3 | R5 `Tax (8%)` -> `Tax`, repaired by Dyad in the watched tree | live Dyad (Mode B) | `green` | 0 |
-| 4 | Injected type error (`Item \| undefined` as `Item`) | adapter | `green` | 2 |
-| 5 | Injected lint defect (incomplete hook deps) | adapter | `green` | 1 |
-| 6 | Injected removal-by-array-index | adapter | `green` | 0 |
-| 7 | Injected currency defect (`$4.5` not `$4.50`) | adapter | `green` | 1 |
-| 8 | Tamper attempt (weakened assertion in a protected path) | adapter | `escalated_safety` | 1 |
-| 9 | Unsatisfiable requirement, no effective repair in `src/**` | adapter | `escalated_no_progress` | 2 |
+| 1 | Prompt issued, operator never pasted | live Dyad | invocation timeout | 1 |
+| 2 | Repair correct, tree carried untracked build output | live Dyad | safety escalation | 1 |
+| 3 | Tax label repaired in the watched tree | live Dyad | green | 0 |
+| 4 | Injected type error | adapter | green | 2 |
+| 5 | Injected incomplete hook dependencies | adapter | green | 1 |
+| 6 | Injected removal by array index | adapter | green | 0 |
+| 7 | Injected currency formatting | adapter | green | 1 |
+| 8 | Tamper attempt on a protected path | adapter | safety escalation | 1 |
+| 9 | Unsatisfiable requirement | adapter | no-progress escalation | 2 |
 
-Notes that matter more than the totals:
+Gate performance, averaged over four consecutive full runs: standards 0.0s, lint 0.1s, typecheck
+4.6s, build 2.3s, browser tests 31.3s, total 38.6s. The build-only tier is about 7.0s.
 
-**Row 3 is the load-bearing live result.** `refs/harness/last-green` points at commit `c15267f`, which
-Dyad authored directly in the watched working tree. The harness detected the state change, verified it
-default-deny, re-gated, and recorded green. That is the single-tree Mode B contract demonstrated end to
-end rather than asserted.
+Row 3 is the load-bearing result. Dyad repaired the tax label directly in the watched working tree,
+the harness detected the change, verified it against the writable allowlist, re-ran the gates,
+recorded green, and set the last-green reference to Dyad's own commit.
 
-**Row 4 is the only multi-turn record.** Attempt 1 changed `src/routes/index.tsx` and left one typecheck
-failure, so the packet for attempt 2 carried populated `PRIOR ATTEMPTS ON THIS SIGNATURE` history;
-attempt 2 reached `complete`. Its `progress` markers move from `{stage: "typecheck", stageIndex: 2}` to
-`{stage: "complete", stageIndex: 5}`, which is the stage-aware progress rule working on real data.
+Row 4 is the only multi-attempt record. The first attempt changed source and left one typecheck
+failure, so the second prompt carried populated prior-attempt history, and progress advanced from the
+typecheck stage to complete. That is the stage-aware progress rule working on real data.
 
-**Row 6 is a negative result and is reported as one.** The removal-by-array-index defect was injected and
-Tier 1 passed in 0 attempts: the harness did not detect it. R4 decrements a single-line cart, where
-removal by index and removal by identity are indistinguishable. The defect was reverted rather than left
-in the verified-green tree. This is the clearest available demonstration that the harness is exactly as
-strong as the specification it runs, and that a green gate is evidence about the suite as much as about
-the source. Closing it needs an R4 that decrements the second of two distinct lines.
+Rows 8 and 9 are adapter-driven by necessity rather than convenience. A tamper payload has to arrive
+mid-cycle to appear in an attempt's own before-and-after comparison at all; a weakened assertion
+sitting in the starting state is simply part of the baseline. Separately, a competent model cannot be
+made to tamper or to oscillate on demand. The adapter crosses the identical verification and
+state-machine boundary as a live session, so what these rows prove is the harness's behaviour, which
+is what is being asked of them.
 
-**Rows 8 and 9 are adapter-driven by necessity, not convenience.** A tamper attempt has to be the payload
-a fixer applies mid-cycle, because `verifyProtected` compares an attempt's own before/after delta - a
-weakened assertion present in the starting state is part of the baseline and is invisible to it. And a
-competent model cannot be reliably made to tamper or to oscillate on demand. The deterministic adapter
-crosses the identical verifier and state-machine boundary as Mode B, so what these rows prove is the
-harness's behaviour, which is what the SOW asks of them.
+Every escalation left the repository clean, with failed and injected red commits preserved in history.
 
-Every escalation left the repository clean, and `git diff --quiet refs/harness/last-green HEAD --
-. ':!cycles.jsonl'` passes at the end of the run, with failed and injected red commits preserved in
-ancestry.
+### Row 6 is a negative result
+
+The removal-by-array-index defect was injected and the full gate passed in zero attempts. The harness
+did not detect it, because the acceptance test decrements a single-line cart, where removal by index
+and removal by identity are indistinguishable. The defect was reverted rather than left in the
+verified-green tree.
+
+This is the most useful line in the log. A green gate is evidence about the test suite at least as
+much as about the source, and this harness is exactly as strong as the specification it runs. Closing
+it needs a test that decrements the second of two distinct lines.
+
+A related gap, found by reading and left open deliberately: the brief defines a line total as base
+price plus a size modifier, times quantity, with Medium at fifty cents and Large at one dollar. The
+generated app applies no size modifier at all, and the acceptance test only exercises the Small
+option at zero, so the suite cannot see it. Recorded rather than rushed, and it is the first thing a
+follow-up should fix.
+
+## What unattended operation still needs
+
+The loop itself already runs unattended. On a real session it built the prompt, waited on the
+interface, detected the write, verified it, escalated, rolled back without destroying history, wrote
+a valid record and left a clean tree, with no intervention inside the loop.
+
+What needed a human was of two different kinds, and conflating them would be a mistake. **Defects**,
+the three above, each found only by running against genuine exports and each now fixed permanently.
+**Adjudication**, deciding that the hydration failures were a bad test while the tax label was a bad
+application. The second kind is not a gap to be automated away. It is the boundary the design
+deliberately preserves.
+
+The concrete remaining gaps: Dyad exposes no headless or scriptable interface, so the paste and
+approve step is irreducibly manual; installing the acceptance tests into a freshly imported project
+is a documented copy rather than a script step; and deciding what narrative the evidence supports is
+manual, though collecting and validating it is now scripted.
+
+## Note on the published history
+
+This repository and the specimen archives had their Git history rewritten once before publication, to
+remove a third-party proprietary document that should not be republished. Commit identifiers recorded
+in `cycles.jsonl` were captured before that rewrite and therefore do not resolve against the published
+history. The commits, their contents and their order are unchanged; only the identifiers moved.
