@@ -354,7 +354,7 @@ tests/fixtures/       distinct import fixtures and acceptance specimen
 .harness/runs/        ignored runtime evidence
 ```
 
-See `design.md` for the normative MVP architecture and `FINDINGS.md` for observed Dyad constraints, live-run results, and known limitations.
+See `FINDINGS.md` for observed Dyad constraints, live-run results, and known limitations. Requirement IDs (`IMP-`, `GATE-`, `PRM-`, `CYC-`, `SPEC-`) appear in test names and commit messages.
 
 ## Known limitations
 

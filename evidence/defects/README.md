@@ -117,5 +117,5 @@ framing that a competent model should not be asked to oscillate or fail on deman
 model is needed to demonstrate this outcome.
 
 **Expected terminal outcome**: `escalated_no_progress` (the no-progress check dominates the
-3-attempt signature budget for an identical failure set, per `design.md` GATE/CYC semantics)
+3-attempt signature budget for an identical failure set, per the documented GATE/CYC termination semantics)
 after repeated attempts that cannot change the outcome.
