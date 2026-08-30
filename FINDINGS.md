@@ -226,7 +226,72 @@ Concrete gaps that remain for genuinely unattended (no-human-anywhere) operation
   1.12 actually exposes (`evidence/dyad-spike-2026-08-29.md`); a fully unattended loop needs either a
   Dyad-provided headless/API mode that does not currently exist, or a different model-invocation path
   entirely.
-- Evidence collection into `evidence/` (sanitized `cycles.jsonl`, timings tables, import reports) is a
-  manual curation step, not scripted.
+- Evidence collection into `evidence/` is now scripted (`scripts/evidence.sh`), which stages the files,
+  schema-validates every cycle record, and secret-scans the staged copy before writing. Deciding *what
+  narrative* the evidence supports remains manual.
 - Installing the R1-R8 spec into an imported project's `e2e/` after `baseline-v1` is a documented manual
   copy (`cp tests/fixtures/acceptance-spec/*.ts e2e/`), not a harness script step.
+
+
+## Acceptance matrix results
+
+Measured on the reference machine (Ubuntu 26.04, Linux x64, Node 22.16.0, npm 11.6.1, Git 2.53.0,
+Chromium via pinned Playwright 1.58.2). Full `cycles.jsonl` is retained at `evidence/coffee/`.
+
+Gate performance, Tier 1, averaged over four consecutive real runs on the coffee specimen:
+
+| Stage | Duration |
+|---|---:|
+| standards | 0.0 s |
+| lint | 0.1 s |
+| typecheck | 4.6 s |
+| build | 2.3 s |
+| e2e (Chromium, R1-R8) | 31.3 s |
+| **Tier 1 total** | **38.6 s** |
+| **Tier 0 total** (standards -> build) | **~7.0 s** |
+
+Nine cycles, every record schema-valid against `schemas/cycle-record.schema.json`. The `driver` column is
+verifiable independently of this table: live rows carry `dyad.metadataSource: "operator-declared"`,
+adapter rows carry `"test-adapter"`, and the harness never guesses that field.
+
+| # | Scenario | Driver | Outcome | Attempts |
+|---:|---|---|---|---:|
+| 1 | R5 packet, operator never pasted | live Dyad (Mode B) | `invocation_timeout` | 1 |
+| 2 | R5 repair, tree carried untracked `.output/` build artifacts | live Dyad (Mode B) | `escalated_safety` | 1 |
+| 3 | R5 `Tax (8%)` -> `Tax`, repaired by Dyad in the watched tree | live Dyad (Mode B) | `green` | 0 |
+| 4 | Injected type error (`Item \| undefined` as `Item`) | adapter | `green` | 2 |
+| 5 | Injected lint defect (incomplete hook deps) | adapter | `green` | 1 |
+| 6 | Injected removal-by-array-index | adapter | `green` | 0 |
+| 7 | Injected currency defect (`$4.5` not `$4.50`) | adapter | `green` | 1 |
+| 8 | Tamper attempt (weakened assertion in a protected path) | adapter | `escalated_safety` | 1 |
+| 9 | Unsatisfiable requirement, no effective repair in `src/**` | adapter | `escalated_no_progress` | 2 |
+
+Notes that matter more than the totals:
+
+**Row 3 is the load-bearing live result.** `refs/harness/last-green` points at commit `c15267f`, which
+Dyad authored directly in the watched working tree. The harness detected the state change, verified it
+default-deny, re-gated, and recorded green. That is the single-tree Mode B contract demonstrated end to
+end rather than asserted.
+
+**Row 4 is the only multi-turn record.** Attempt 1 changed `src/routes/index.tsx` and left one typecheck
+failure, so the packet for attempt 2 carried populated `PRIOR ATTEMPTS ON THIS SIGNATURE` history;
+attempt 2 reached `complete`. Its `progress` markers move from `{stage: "typecheck", stageIndex: 2}` to
+`{stage: "complete", stageIndex: 5}`, which is the stage-aware progress rule working on real data.
+
+**Row 6 is a negative result and is reported as one.** The removal-by-array-index defect was injected and
+Tier 1 passed in 0 attempts: the harness did not detect it. R4 decrements a single-line cart, where
+removal by index and removal by identity are indistinguishable. The defect was reverted rather than left
+in the verified-green tree. This is the clearest available demonstration that the harness is exactly as
+strong as the specification it runs, and that a green gate is evidence about the suite as much as about
+the source. Closing it needs an R4 that decrements the second of two distinct lines.
+
+**Rows 8 and 9 are adapter-driven by necessity, not convenience.** A tamper attempt has to be the payload
+a fixer applies mid-cycle, because `verifyProtected` compares an attempt's own before/after delta - a
+weakened assertion present in the starting state is part of the baseline and is invisible to it. And a
+competent model cannot be reliably made to tamper or to oscillate on demand. The deterministic adapter
+crosses the identical verifier and state-machine boundary as Mode B, so what these rows prove is the
+harness's behaviour, which is what the SOW asks of them.
+
+Every escalation left the repository clean, and `git diff --quiet refs/harness/last-green HEAD --
+. ':!cycles.jsonl'` passes at the end of the run, with failed and injected red commits preserved in
+ancestry.

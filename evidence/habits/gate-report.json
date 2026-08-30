@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "runId": "20260829T142658095Z-06f50e7",
+  "tier": 0,
+  "commit": "06f50e7ae104a61ce85f929b5e6e06413a640c87",
+  "status": "failed",
+  "failureCount": 3,
+  "failureSignature": "sha256:85e1f4c8927cc09880bf86a514ad94c89b9411a027b9013356e9945b60847f36",
+  "durationMs": 71,
+  "gates": [
+    {
+      "gate": "standards",
+      "status": "passed",
+      "durationMs": 16,
+      "failures": []
+    },
+    {
+      "gate": "lint",
+      "status": "failed",
+      "durationMs": 51,
+      "failures": [
+        {
+          "failureId": "sha256:5282ab967750547eb89fd3c17d571911debcbb9f4d5be5740c594e4679a1ffde",
+          "failureClassId": "sha256:5282ab967750547eb89fd3c17d571911debcbb9f4d5be5740c594e4679a1ffde",
+          "gate": "lint",
+          "file": "src/routes/__root.tsx",
+          "line": null,
+          "column": null,
+          "rule": "a11y/useButtonType",
+          "message": "[{\"elements\":[],\"content\":\"Provide an explicit \"},{\"elements\":[\"Emphasis\"],\"content\":\"type\"},{\"elements\":[],\"content\":\" prop for the \"},{\"elements\":[\"Emphasis\"],\"content\":\"button\"},{\"elements\":[],\"content\":\" element.\"}]",
+          "testId": null
+        },
+        {
+          "failureId": "sha256:2e78e230cbd1feeb5d7ee2d9b47b27b2fb8b38d4f768ff0743217e09886b5590",
+          "failureClassId": "sha256:2e78e230cbd1feeb5d7ee2d9b47b27b2fb8b38d4f768ff0743217e09886b5590",
+          "gate": "lint",
+          "file": "src/routes/index.tsx",
+          "line": null,
+          "column": null,
+          "rule": "a11y/useSemanticElements",
+          "message": "[{\"elements\":[],\"content\":\"The elements with the following roles can be changed to the following elements:\\n<ol>\\n<ul>\\n\"}]",
+          "testId": null
+        },
+        {
+          "failureId": "sha256:10fe6cbb56207403b5055f9e8ff40998e84ece524a6386b25945c4f56033e48e",
+          "failureClassId": "sha256:10fe6cbb56207403b5055f9e8ff40998e84ece524a6386b25945c4f56033e48e",
+          "gate": "lint",
+          "file": "src/routes/index.tsx",
+          "line": null,
+          "column": null,
+          "rule": "a11y/noRedundantRoles",
+          "message": "[{\"elements\":[],\"content\":\"Using the role attribute 'list' on the 'ul' element is redundant, because it is implied by the semantic 'ul' element.\"}]",
+          "testId": null
+        }
+      ]
+    },
+    {
+      "gate": "typecheck",
+      "status": "not_run",
+      "durationMs": 0,
+      "failures": []
+    },
+    {
+      "gate": "build",
+      "status": "not_run",
+      "durationMs": 0,
+      "failures": []
+    }
+  ]
+}

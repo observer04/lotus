@@ -1,13 +1,12 @@
 diff --git a/src/routes/index.tsx b/src/routes/index.tsx
-index 825ea04..4aebc85 100644
+index 8f1cee9..a552c9f 100644
 --- a/src/routes/index.tsx
 +++ b/src/routes/index.tsx
-@@ -87,7 +87,7 @@ function formatCents(cents: number): string {
- }
+@@ -88,7 +88,6 @@ function formatCents(cents: number): string {
  
  function lineTotalCents(line: CartLine): number {
--	const product = PRODUCTS.find((p) => p.id === line.productId)!;
-+	const product = PRODUCTS.find((p) => p.id === line.productId);
+ 	const product = PRODUCTS.find((p) => p.id === line.productId);
+-	if (!product) return 0;
  	return product.priceCents * line.qty;
  }
  

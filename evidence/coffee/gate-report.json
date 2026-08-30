@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "runId": "20260830T152341668Z-7d5f94e",
+  "tier": 1,
+  "commit": "7d5f94e4f8f85e68127943d0fe047b49fe7bee0d",
+  "status": "failed",
+  "failureCount": 1,
+  "failureSignature": "sha256:4a95c3815ef28a3b9076e21c433e1e501c23a11f203f59ab89a3901f8c41a58d",
+  "durationMs": 38607,
+  "gates": [
+    {
+      "gate": "standards",
+      "status": "passed",
+      "durationMs": 19,
+      "failures": []
+    },
+    {
+      "gate": "lint",
+      "status": "passed",
+      "durationMs": 65,
+      "failures": []
+    },
+    {
+      "gate": "typecheck",
+      "status": "passed",
+      "durationMs": 4604,
+      "failures": []
+    },
+    {
+      "gate": "build",
+      "status": "passed",
+      "durationMs": 2337,
+      "failures": []
+    },
+    {
+      "gate": "e2e",
+      "status": "failed",
+      "durationMs": 31577,
+      "failures": [
+        {
+          "failureId": "sha256:a22924f0d785b0ee22535f86032efc3d8fef693e4a04935ae679c83a13a8cb83",
+          "failureClassId": "sha256:a22924f0d785b0ee22535f86032efc3d8fef693e4a04935ae679c83a13a8cb83",
+          "gate": "e2e",
+          "file": "coffee-ordering.spec.ts",
+          "line": 17,
+          "column": 1,
+          "rule": "R1",
+          "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeEnabled\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator:  getByTestId('checkout-submit')\nExpected: enabled\nReceived: disabled\nTimeout:  5000ms\n\nCall log:\n\u001b[2m  - Expect \"toBeEnabled\" with timeout 5000ms\u001b[22m\n\u001b[2m  - waiting for getByTestId('checkout-submit')\u001b[22m\n\u001b[2m    9 × locator resolved to <button disabled type=\"submit\" data-testid=\"checkout-submit\" data-tsd-source=\"/src/routes/index.tsx:468:8\" class=\"w-full rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50\">Place order</button>\u001b[22m\n\u001b[2m      - unexpected value \"disabled\"\u001b[22m",
+          "testId": "R1"
+        }
+      ],
+      "discardedFailureIds": []
+    }
+  ]
+}

@@ -12,6 +12,6 @@ test-results/
 !.env.example
 *.log
 .DS_Store
-gate-report.json
-.gate-report.*.tmp
+/gate-report.json
+/.gate-report.*.tmp
 .claude/

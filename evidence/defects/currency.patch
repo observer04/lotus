@@ -1,5 +1,5 @@
 diff --git a/src/routes/index.tsx b/src/routes/index.tsx
-index 825ea04..7f44b8d 100644
+index 8f1cee9..62c3f2e 100644
 --- a/src/routes/index.tsx
 +++ b/src/routes/index.tsx
 @@ -83,7 +83,7 @@ const CART_KEY = "coffee-cart-v1";

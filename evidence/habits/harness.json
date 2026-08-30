@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "harnessVersion": "0.1.0",
+  "source": {
+    "kind": "git",
+    "identity": "git:ea7f6b3f229d06e9cf59c1c2c4fb612f47e59d07",
+    "resolvedCommit": "ea7f6b3f229d06e9cf59c1c2c4fb612f47e59d07"
+  },
+  "importedAt": "2026-08-29T14:24:57.487Z",
+  "nodeVersion": "22.16.0",
+  "framework": "vite",
+  "commands": {
+    "build": [
+      "npm",
+      "run",
+      "harness:build"
+    ],
+    "dev": [
+      "npm",
+      "run",
+      "dev",
+      "--",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "{PORT}"
+    ],
+    "typecheck": [
+      "npm",
+      "run",
+      "harness:typecheck"
+    ],
+    "lint": [
+      "node_modules/.bin/biome",
+      "ci",
+      "src",
+      "e2e",
+      "--reporter=json"
+    ],
+    "e2e": [
+      "node_modules/.bin/playwright",
+      "test",
+      "--project=chromium"
+    ]
+  },
+  "writableGlobs": [
+    "src/**"
+  ],
+  "serverReadyTimeoutMs": 30000
+}

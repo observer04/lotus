@@ -1,5 +1,5 @@
 diff --git a/src/routes/index.tsx b/src/routes/index.tsx
-index 825ea04..45824a3 100644
+index 8f1cee9..a8e66d1 100644
 --- a/src/routes/index.tsx
 +++ b/src/routes/index.tsx
 @@ -1,5 +1,5 @@
@@ -9,7 +9,7 @@ index 825ea04..45824a3 100644
  
  export const Route = createFileRoute("/")({
  	head: () => ({
-@@ -200,6 +200,7 @@ function Index() {
+@@ -201,6 +201,7 @@ function Index() {
  	useEffect(() => {
  		if (hydrated) {
  			window.localStorage.setItem(CART_KEY, JSON.stringify(cart));
