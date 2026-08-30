@@ -111,13 +111,7 @@ git add e2e
 git commit -m "test: add Appendix A R1-R8 specification"
 ```
 
-The canonical spec already waits for client hydration (`waitForHydration` in `fixtures.ts`) before any
-interaction. This matters if you adapt it for a different app: current Lovable exports are commonly
-server-rendered (TanStack Start), which means every `data-testid` is present in the server HTML before
-React attaches event handlers, so Playwright's actionability checks pass on a click that lands before
-hydration and the click is silently lost. Against a real SSR export this looked exactly like the
-application was broken (7 of 8 R1-R8 tests failed) until isolated as a spec assumption, not a defect --
-see `FINDINGS.md`.
+The canonical spec already waits for client hydration (`waitForHydration` in `fixtures.ts`) before any interaction. This matters if you adapt it for a different app: current Lovable exports are commonly server-rendered (TanStack Start), which means every `data-testid` is present in the server HTML before React attaches event handlers, so Playwright's actionability checks pass on a click that lands before hydration and the click is silently lost. Against a real SSR export this looked exactly like the application was broken (7 of 8 R1-R8 tests failed) until isolated as a spec assumption, not a defect -- see `FINDINGS.md`.
 
 The first convergence is explicit because no verified green ref exists yet:
 
@@ -135,18 +129,7 @@ Subsequent cycles require `refs/harness/last-green`.
 ## 4. Run a Dyad repair cycle
 
 **Import the project into Dyad in place, with copying disabled.** This is the single most likely way
-to lose an hour: if Dyad imports with copying *enabled* (its default), every edit Dyad makes lands in
-its own copy under `~/dyad-apps/<name>`, not the tree this harness is watching. The symptom is
-indistinguishable from an operator who never pasted the prompt or never clicked approve: `cycle.sh`
-waits patiently, correctly, and forever, then times out (`invocation_timeout`) with a clean rollback --
-there is no error, because from the harness's point of view nothing happened. If a cycle times out and
-you are confident you pasted and approved a proposal, check Dyad's project settings for a copy first.
-The design's own capability spike confirmed importing an existing app in place is supported (Dyad 1.12
-imported the disposable spike app with copying disabled and retained the original path); it is just not
-the default, and Dyad gives no warning when copying is on. `cycle.sh` itself
-prints a non-blocking warning at startup if a same-named directory already exists under
-`~/dyad-apps/` (override with `HARNESS_DYAD_APPS_DIR`) -- a heuristic, not proof, but worth a second look
-if you see it.
+to lose an hour: if Dyad imports with copying *enabled* (its default), every edit Dyad makes lands in its own copy under `~/dyad-apps/<name>`, not the tree this harness is watching. The symptom is indistinguishable from an operator who never pasted the prompt or never clicked approve: `cycle.sh` waits patiently, correctly, and forever, then times out (`invocation_timeout`) with a clean rollback -- there is no error, because from the harness's point of view nothing happened. If a cycle times out and you are confident you pasted and approved a proposal, check Dyad's project settings for a copy first. The design's own capability spike confirmed importing an existing app in place is supported (Dyad 1.12 imported the disposable spike app with copying disabled and retained the original path); it is just not the default, and Dyad gives no warning when copying is on. `cycle.sh` itself prints a non-blocking warning at startup if a same-named directory already exists under `~/dyad-apps/` (override with `HARNESS_DYAD_APPS_DIR`) -- a heuristic, not proof, but worth a second look if you see it.
 
 From a clean red state:
 
@@ -204,12 +187,7 @@ For repeated identical failures, no-progress normally stops after two attempts; 
 
 ### Concurrency
 
-At most one `cycle.sh` runs against a repository at a time. Starting a cycle writes `.harness/cycle.lock`
-(pid + start time, gitignored); a second concurrent start refuses immediately with a precondition exit
-(code 2) rather than racing the first cycle's additive rollback, which would otherwise mistake the other
-cycle's own commit for an unverified change to discard. A lock whose pid is no longer running (a crashed
-or killed prior cycle) is treated as stale and reclaimed automatically. The lock is released on every
-terminal path, including escalation and timeout.
+At most one `cycle.sh` runs against a repository at a time. Starting a cycle writes `.harness/cycle.lock` (pid + start time, gitignored); a second concurrent start refuses immediately with a precondition exit (code 2) rather than racing the first cycle's additive rollback, which would otherwise mistake the other cycle's own commit for an unverified change to discard. A lock whose pid is no longer running (a crashed or killed prior cycle) is treated as stale and reclaimed automatically. The lock is released on every terminal path, including escalation and timeout.
 
 On non-bootstrap escalation Lotus creates an additive rollback commit whose code tree equals the last verified green tree. Failed/red commits remain in ancestry. No `git reset --hard` or force operation is used. The proof command is:
 
@@ -246,18 +224,13 @@ Per-attempt prompts, reports and verification details remain under `.harness/run
 
 ## 7. Curate evidence
 
-`scripts/evidence.sh` copies an imported project's durable audit trail into this harness repository, so
-it survives even if the disposable import workspace does not:
+`scripts/evidence.sh` copies an imported project's durable audit trail into this harness repository, so it survives even if the disposable import workspace does not:
 
 ```bash
 ./scripts/evidence.sh coffee ~/projects/lotus-live/coffee
 ```
 
-It copies exactly four files (`cycles.jsonl`, `gate-report.json`, `import-report.md`, `harness.json`)
-into `evidence/<project>/`, but only after staging them, schema-validating every `cycles.jsonl` line
-against `schemas/cycle-record.schema.json`, and running the same high-confidence secret scanner used at
-import time over the staged copy. Any schema failure or secret finding refuses the whole copy rather than
-writing a partial or unsafe result -- nothing lands in `evidence/` on a refusal.
+It copies exactly four files (`cycles.jsonl`, `gate-report.json`, `import-report.md`, `harness.json`) into `evidence/<project>/`, but only after staging them, schema-validating every `cycles.jsonl` line against `schemas/cycle-record.schema.json`, and running the same high-confidence secret scanner used at import time over the staged copy. Any schema failure or secret finding refuses the whole copy rather than writing a partial or unsafe result -- nothing lands in `evidence/` on a refusal.
 
 ## 8. Inject a controlled defect
 
@@ -269,11 +242,7 @@ For an acceptance patch that only changes `src/**` or `e2e/**`:
 
 The script performs `git apply --check`, rejects patches outside the allowed defect roots, applies the patch, and commits the red state so it remains in history.
 
-`evidence/defects/` holds the staged SOW defect-class matrix (type error, lint defect, index-based
-removal, currency formatting, tamper bait, an unsatisfiable requirement) as ready-to-apply patches with a
-README explaining each one's expected terminal outcome. They are authored against a specific specimen
-commit and are unverified until re-checked with `git apply --check` against whatever commit you actually
-have -- rebase or regenerate before injecting if the specimen has moved.
+`evidence/defects/` holds the staged SOW defect-class matrix (type error, lint defect, index-based removal, currency formatting, tamper bait, an unsatisfiable requirement) as ready-to-apply patches with a README explaining each one's expected terminal outcome. They are authored against a specific specimen commit and are unverified until re-checked with `git apply --check` against whatever commit you actually have -- rebase or regenerate before injecting if the specimen has moved.
 
 ## 9. Development and deterministic validation
 
