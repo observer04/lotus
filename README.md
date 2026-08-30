@@ -50,7 +50,8 @@ The importer:
 7. proves `useExhaustiveDependencies` actually fires;
 8. generates `harness.json` and `import-report.md`;
 9. resets `e2e/` to an empty harness-owned scaffold so tests from a prior customer cannot leak into the new project;
-10. commits the normalized import and creates immutable `baseline-v1`.
+10. excludes a generator's own build-output directory (`dist`, `build`, `.output` -- TanStack Start/Nitro's target) from the copy and from `.gitignore`, so a later gate rebuild never dirties tracked paths outside `src/**`;
+11. commits the normalized import and creates immutable `baseline-v1`.
 
 If installing Playwright's Chromium build fails because the host is unrecognized (for example `ERROR: Playwright does not support chromium on ubuntu26.04-x64`), the importer prints the exact remediation and exits non-zero. It never sets the override itself:
 
@@ -110,6 +111,14 @@ git add e2e
 git commit -m "test: add Appendix A R1-R8 specification"
 ```
 
+The canonical spec already waits for client hydration (`waitForHydration` in `fixtures.ts`) before any
+interaction. This matters if you adapt it for a different app: current Lovable exports are commonly
+server-rendered (TanStack Start), which means every `data-testid` is present in the server HTML before
+React attaches event handlers, so Playwright's actionability checks pass on a click that lands before
+hydration and the click is silently lost. Against a real SSR export this looked exactly like the
+application was broken (7 of 8 R1-R8 tests failed) until isolated as a spec assumption, not a defect --
+see `FINDINGS.md`.
+
 The first convergence is explicit because no verified green ref exists yet:
 
 ```bash
@@ -124,6 +133,20 @@ When bootstrap reaches green, Lotus creates:
 Subsequent cycles require `refs/harness/last-green`.
 
 ## 4. Run a Dyad repair cycle
+
+**Import the project into Dyad in place, with copying disabled.** This is the single most likely way
+to lose an hour: if Dyad imports with copying *enabled* (its default), every edit Dyad makes lands in
+its own copy under `~/dyad-apps/<name>`, not the tree this harness is watching. The symptom is
+indistinguishable from an operator who never pasted the prompt or never clicked approve: `cycle.sh`
+waits patiently, correctly, and forever, then times out (`invocation_timeout`) with a clean rollback --
+there is no error, because from the harness's point of view nothing happened. If a cycle times out and
+you are confident you pasted and approved a proposal, check Dyad's project settings for a copy first.
+The design's own capability spike confirmed importing an existing app in place is supported (Dyad 1.12
+imported the disposable spike app with copying disabled and retained the original path); it is just not
+the default, and Dyad gives no warning when copying is on. `cycle.sh` itself
+prints a non-blocking warning at startup if a same-named directory already exists under
+`~/dyad-apps/` (override with `HARNESS_DYAD_APPS_DIR`) -- a heuristic, not proof, but worth a second look
+if you see it.
 
 From a clean red state:
 
@@ -179,6 +202,15 @@ A cycle stops on:
 
 For repeated identical failures, no-progress normally stops after two attempts; the three-attempt signature cap is a backstop for a stable class whose diagnostic count is improving. A completed green gate always wins even if the execution clock expires during that gate.
 
+### Concurrency
+
+At most one `cycle.sh` runs against a repository at a time. Starting a cycle writes `.harness/cycle.lock`
+(pid + start time, gitignored); a second concurrent start refuses immediately with a precondition exit
+(code 2) rather than racing the first cycle's additive rollback, which would otherwise mistake the other
+cycle's own commit for an unverified change to discard. A lock whose pid is no longer running (a crashed
+or killed prior cycle) is treated as stale and reclaimed automatically. The lock is released on every
+terminal path, including escalation and timeout.
+
 On non-bootstrap escalation Lotus creates an additive rollback commit whose code tree equals the last verified green tree. Failed/red commits remain in ancestry. No `git reset --hard` or force operation is used. The proof command is:
 
 ```bash
@@ -212,7 +244,22 @@ Undeclared model metadata is stored as null with `metadataSource: "undeclared"`;
 
 Per-attempt prompts, reports and verification details remain under `.harness/runs/` and are intentionally untracked.
 
-## 7. Inject a controlled defect
+## 7. Curate evidence
+
+`scripts/evidence.sh` copies an imported project's durable audit trail into this harness repository, so
+it survives even if the disposable import workspace does not:
+
+```bash
+./scripts/evidence.sh coffee ~/projects/lotus-live/coffee
+```
+
+It copies exactly four files (`cycles.jsonl`, `gate-report.json`, `import-report.md`, `harness.json`)
+into `evidence/<project>/`, but only after staging them, schema-validating every `cycles.jsonl` line
+against `schemas/cycle-record.schema.json`, and running the same high-confidence secret scanner used at
+import time over the staged copy. Any schema failure or secret finding refuses the whole copy rather than
+writing a partial or unsafe result -- nothing lands in `evidence/` on a refusal.
+
+## 8. Inject a controlled defect
 
 For an acceptance patch that only changes `src/**` or `e2e/**`:
 
@@ -222,7 +269,13 @@ For an acceptance patch that only changes `src/**` or `e2e/**`:
 
 The script performs `git apply --check`, rejects patches outside the allowed defect roots, applies the patch, and commits the red state so it remains in history.
 
-## 8. Development and deterministic validation
+`evidence/defects/` holds the staged SOW defect-class matrix (type error, lint defect, index-based
+removal, currency formatting, tamper bait, an unsatisfiable requirement) as ready-to-apply patches with a
+README explaining each one's expected terminal outcome. They are authored against a specific specimen
+commit and are unverified until re-checked with `git apply --check` against whatever commit you actually
+have -- rebase or regenerate before injecting if the specimen has moved.
+
+## 9. Development and deterministic validation
 
 The harness's normal automated suite does not call an LLM:
 
@@ -251,17 +304,21 @@ The suite covers:
 - invocation timeout;
 - additive rollback and clean-tree invariants;
 - bootstrap creation of `harness-green-v1`.
-- real Mode B watcher capture for both committed and uncommitted edits.
+- real Mode B watcher capture for both committed and uncommitted edits;
+- unowned generated/vendored path exclusion from the standards scan, protection, and prompt context;
+- generator build-output (`.output/`) exclusion from the import and across a rebuild;
+- cycle concurrency lock refusal and stale-lock reclaim;
+- evidence curation schema/secret-scan refusal paths.
 
 `tests/helpers/fake-fixer.mjs` crosses the same verifier and state-machine boundary as Mode B. Separate acceptance cases exercise the actual interactive watcher for both committed and uncommitted edits. The fake fixer is a deterministic test adapter, not an alternate production fixer.
 
-## 9. Playwright acceptance spec
+## 10. Playwright acceptance spec
 
 `e2e/coffee-ordering.spec.ts` contains one test for every SOW rule R1–R8. Tests use `data-testid` for owned interactions and assert exact strings where the SOW makes them normative, including `$4.50`, `coffee-cart-v1`, and `^ORD-\d{6}$`.
 
 Chromium is the only browser installed by the importer.
 
-## 10. Configuration
+## 11. Configuration
 
 Useful environment variables:
 
@@ -272,6 +329,7 @@ HARNESS_POLL_MS                default 2000
 HARNESS_COMMIT_STABLE_POLLS    default 5
 HARNESS_DIRTY_STABLE_POLLS     default 15
 HARNESS_PROMPT_MAX_BYTES       default 49152
+HARNESS_DYAD_APPS_DIR          default ~/dyad-apps (copy-mode preflight warning)
 DYAD_VERSION                   metadata only
 DYAD_PROVIDER                  metadata only
 DYAD_MODEL                     metadata only
@@ -280,14 +338,15 @@ DYAD_REASONING_EFFORT          metadata only
 
 Secrets belong in Dyad/provider settings or process environment. The harness never needs an LLM key for deterministic tests. Prompt material redacts supported key shapes; source import separately refuses high-confidence signatures defined in `config/secret-patterns.json`.
 
-## 11. Repository map
+## 12. Repository map
 
 ```text
 scripts/             stable shell entrypoints + Node implementation
-scripts/lib/         parsing, Git, process, prompt and termination modules
-config/              banned-pattern and dependency policies
+scripts/lib/         parsing, Git, process, prompt, ownership, lockfile, cycle-lock and termination modules
+config/              banned-pattern, secret-pattern, unowned-path and dependency policies
 schemas/             machine contracts
 e2e/                 R1–R8 Playwright spec
+evidence/            curated cycle/gate/import evidence (scripts/evidence.sh) and staged defect patches
 tests/unit/           pure contracts and parsers
 tests/integration/    import, gate and Git boundaries
 tests/acceptance/     full deterministic cycle behavior
@@ -295,4 +354,14 @@ tests/fixtures/       distinct import fixtures and acceptance specimen
 .harness/runs/        ignored runtime evidence
 ```
 
-See `design.md` for the normative MVP architecture and `FINDINGS.md` for observed Dyad constraints and validation results.
+See `design.md` for the normative MVP architecture and `FINDINGS.md` for observed Dyad constraints, live-run results, and known limitations.
+
+## Known limitations
+
+See `FINDINGS.md` for the full writeups; this is a pointer, not a duplicate:
+
+- **Adjudication is manual by design, not automatable.** Deciding whether a red e2e test is a defective spec or a defective specimen requires reading the actual normative requirement (the SOW); this is the human-in-the-loop boundary Mode B intentionally preserves, not a gap. See "What unattended operation still needs."
+- **No headless Dyad interface exists.** Mode B's GUI paste/approve step is the actual product surface Dyad 1.12 exposes; see the capability spike (`evidence/dyad-spike-2026-08-29.md`) and "What unattended operation still needs."
+- **Dyad's default import mode silently breaks the single-tree assumption** Mode B rests on; see the warning in section 4 and "Dyad behavioral observation: copy-mode import is the default, and it is silent" in `FINDINGS.md`.
+- **Evidence curation and the R1-R8 spec install are operator-run steps** (`scripts/evidence.sh`, the `cp` in section 3), not triggered automatically by the importer or the cycle runner.
+- **A known spec-depth gap**: the R1-R8 suite does not exercise the SOW's per-size line-total modifier (Small/Medium/Large), so a missing-modifier defect on a non-Small item would not be caught today. See "Known spec-depth gap" in `FINDINGS.md`.

@@ -164,3 +164,13 @@ test("CYC-019 a stale lock (pid no longer running) is reclaimed and the cycle pr
   assert.equal(codeState(root),"FIXED");
   assert.equal(fs.existsSync(path.join(root,".harness","cycle.lock")),false,"the lock must be released again on a normal terminal path");
 });
+
+test("preflight warns, but does not block, when a same-named ~/dyad-apps copy exists",()=>{
+  const {root}=setupCycle("A");
+  const dyadAppsDir=tempDir("lotus-dyad-apps-");
+  fs.mkdirSync(path.join(dyadAppsDir,path.basename(root)),{recursive:true});
+  const r=run(["bash","scripts/cycle.sh","0"],{cwd:root,env:{HARNESS_FIXER_EXEC:process.execPath,HARNESS_FIXER_ARGS_JSON:JSON.stringify(["tests/helpers/fake-fixer.mjs","green"]),HARNESS_INVOCATION_TIMEOUT_MS:"5000",HARNESS_CYCLE_TIMEOUT_MS:"30000",HARNESS_POLL_MS:"10",HARNESS_STABLE_POLLS:"1",HARNESS_DYAD_APPS_DIR:dyadAppsDir},timeout:45000,allowFailure:true});
+  assert.equal(r.status,0,r.stderr||r.stdout);
+  assert.match(r.stderr,/dyad-apps.*copying enabled/);
+  assert.equal(codeState(root),"FIXED","the warning must not block a cycle that would otherwise succeed");
+});

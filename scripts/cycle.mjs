@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { head, isClean, git, readRef, updateRef, statusEntries, repositoryPreconditions, snapshotGitState, changedPathsBetween } from "./lib/git-state.mjs";
@@ -17,6 +18,15 @@ const args=process.argv.slice(2);
 const tier=Number(args[0]);
 const bootstrap=args.includes("--bootstrap") || process.env.HARNESS_BOOTSTRAP==="1";
 if(![0,1].includes(tier)){console.error("usage: scripts/cycle.sh <0|1> [--bootstrap]");process.exit(2);}
+// Fingerprint of the most common operator mistake: Dyad's default import mode
+// copies the project under ~/dyad-apps/<name> and every edit lands there, not
+// here, so a cycle waits out the full invocation timeout with no visible
+// error. Warn, never fail -- this is a heuristic, not proof.
+{
+  const dyadAppsDir=process.env.HARNESS_DYAD_APPS_DIR??path.join(os.homedir(),"dyad-apps");
+  const dyadCopyCandidate=path.join(dyadAppsDir,path.basename(ROOT));
+  if(fs.existsSync(dyadCopyCandidate)) console.warn(`warning: ${dyadCopyCandidate} exists. If Dyad imported this project with copying enabled, its edits land there, not here, and this cycle will wait until invocation timeout with no visible error. Re-import in Dyad with copying disabled if a cycle times out unexpectedly.`);
+}
 const startedAt=new Date(); const cycleStart=Date.now();
 const invocationTimeoutMs=Number(process.env.HARNESS_INVOCATION_TIMEOUT_MS??10*60*1000);
 const wallClockMs=Number(process.env.HARNESS_CYCLE_TIMEOUT_MS??20*60*1000);

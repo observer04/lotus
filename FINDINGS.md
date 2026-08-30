@@ -15,6 +15,22 @@ Sanitized retained evidence: `evidence/dyad-spike-2026-08-29.md`.
 
 The earlier spike also reported one approved Gemini 3.7 Flash source edit using `GOOGLE_API_KEY`, followed by a successful build and removal of the copied settings key. The retained sanitized evidence proves the Dyad version, proposal/approval/commit path, and unrelated-file observation, but intentionally does not retain the key, prompt, response, or source. No live model call was made during the present adversarial-review pass.
 
+### Dyad behavioral observation: copy-mode import is the default, and it is silent
+
+The spike above answered "can an existing app be used in place?" with yes -- and it can. What the spike
+did not surface, because the spike's own import happened to use it correctly, is that **importing in
+place is not Dyad's default**. Dyad's default import mode copies the project into `~/dyad-apps/<name>`;
+every subsequent edit Dyad makes lands in that copy, not the tree the harness is watching. Live evidence:
+cycle `20260829T171908846Z-6214bb9` against the coffee specimen ended `invocation_timeout` after waiting
+its full default window, because Dyad had imported with copying enabled. The harness behaved correctly --
+it watched the correct tree, saw no change because there genuinely was none, and timed out and rolled back
+exactly as designed. There is no distinguishing signal between this and an operator who simply never
+pasted the prompt or never clicked approve; Dyad gives no warning that it copied the project, and the
+mistake costs a full invocation-timeout window (10 minutes by default) to surface, plus however long it
+takes the operator to notice the watched tree never changed. This silently breaks the single-tree
+assumption the entire Mode B contract rests on, and it is now documented plainly in the README next to the
+Mode B instructions rather than left to be rediscovered.
+
 ## SOW ambiguities resolved
 
 - A missing npm lockfile is generated before `npm ci`.
