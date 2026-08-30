@@ -154,3 +154,63 @@ Deterministic tests are model-free. Remaining MVP evidence is intentionally not 
 - cycle-log/schema audit and a final secret scan of committed and captured evidence.
 
 Record observed attempt counts, timings, model metadata, handled classes, escalations, and flaky/discarded test IDs here as those live runs complete.
+
+## The `.output` false escalation
+
+Live cycle `20260830T142422432Z-3ef6186` against the coffee specimen produced 16
+`protected_worktree_path` violations, all under `.output/**` (TanStack Start's Nitro build output),
+and escalated `escalated_safety` -- rolling back the fixer's correct, single-file edit along with them.
+The mechanism worked exactly as designed: `.output/` was never excluded from the normalized import
+(`EXCLUDE_NAMES` in `import-lovable.mjs` covered `.git`, `node_modules`, `dist`, `build`,
+`playwright-report`, `test-results`, `.harness`, but not `.output`, and the harness's own `.gitignore`
+had no entry for it either), so a rebuild during Tier 0's build stage regenerated `.output/` inside the
+target and every file in it was untracked and outside the `src/**` writable allowlist. Default-deny
+verification correctly refused to guess that regenerated build output was safe to ignore -- it has no
+way to distinguish "harmless rebuild artifact" from "an edit outside the allowlist" without being told
+which paths are which, and it was not told. Fixed by adding `.output` to `EXCLUDE_NAMES` and `.output/`
+to `.gitignore` (IMP-019), with a regression test whose second assertion -- a rebuild after import must
+leave `git status` clean, not just "the initial import doesn't track it" -- is the one that actually
+protects the loop, since the false escalation came from a *later* rebuild, not the import itself.
+
+This is the argument for default-deny, not against it: a permissive verifier would have let the false
+escalation slide as a "probably fine" build artifact and logged a clean-looking cycle, hiding the gap
+until it silently broke a real repair later, on a project where the artifact drifted to look enough
+like an edit to be missed by eye. Default-deny turned an invisible gitignore gap into a loud, correctly
+diagnosed, immediately-fixable failure the first time it was exercised against a genuine export's real
+build tool.
+
+## What unattended operation still needs
+
+The repair loop ran **unattended end to end** on a real Dyad session: built the failure packet, waited
+on the GUI for a human-approved edit, detected the write, verified it against default-deny protection,
+escalated on a genuine violation, rolled back additively, wrote a schema-valid cycle record, and left a
+clean tree -- with no operator intervention *inside* the loop itself. The one manual step Mode B
+requires by design is the GUI paste-and-approve; everything else (diagnosis, prompt construction,
+verification, rollback, logging) ran without a human deciding anything.
+
+What did require a human across this project was two different kinds of thing, and they should not be
+conflated:
+
+- **Defects.** npm's lockfile-reconciliation quirk, the Biome 1.9.4 diagnostic-shape mismatch, and now
+  `.output` tracking were each found only by running the harness against genuine Lovable exports and a
+  real Dyad cycle -- no amount of synthetic fixture testing surfaced any of the three. Each is now fixed
+  permanently in the harness (`scripts/lib/lockfile.mjs`, the `parseBiome` rewrite, `EXCLUDE_NAMES`/
+  `.gitignore`) with a regression test, so none of them recur on the next import or the next cycle.
+- **Adjudication.** Deciding the hydration failures were a defective *spec* while R5's `Tax` mismatch
+  was a defective *specimen* is human judgment against the SOW, not a defect in the harness. This is not
+  a gap to be automated away -- it is the boundary Mode B's human-in-the-loop design deliberately
+  preserves. A harness that auto-forwarded every red e2e gate straight to a model, with no operator
+  check against the actual normative requirement, would have "fixed" a working application in the
+  hydration case. Removing that adjudication step would not make the harness more unattended in any
+  sense worth having; it would make it wrong more often.
+
+Concrete gaps that remain for genuinely unattended (no-human-anywhere) operation, stated plainly:
+
+- No headless Dyad interface exists. Mode B is a GUI paste-and-approve step because that is what Dyad
+  1.12 actually exposes (`evidence/dyad-spike-2026-08-29.md`); a fully unattended loop needs either a
+  Dyad-provided headless/API mode that does not currently exist, or a different model-invocation path
+  entirely.
+- Evidence collection into `evidence/` (sanitized `cycles.jsonl`, timings tables, import reports) is a
+  manual curation step, not scripted.
+- Installing the R1-R8 spec into an imported project's `e2e/` after `baseline-v1` is a documented manual
+  copy (`cp tests/fixtures/acceptance-spec/*.ts e2e/`), not a harness script step.
